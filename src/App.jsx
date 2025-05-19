@@ -46,7 +46,7 @@ function App() {
                   <Link to="/upload" onClick={closeMenu}>Upload SCORM</Link>
                 </li>
                 <li>
-                  <Link to="/builder" onClick={closeMenu}>SCORM Builder</Link>
+                  <Link to="/builder" onClick={closeMenu}>Media-Based SCORM Builder</Link>
                 </li>
               </ul>
             </nav>

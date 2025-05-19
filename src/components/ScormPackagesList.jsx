@@ -46,7 +46,9 @@ const ScormPackagesList = () => {
         const storedPackages = localStorage.getItem('scormPackages');
         
         if (storedPackages) {
-          setPackages(JSON.parse(storedPackages));
+          const parsedPackages = JSON.parse(storedPackages);
+          console.log('Loaded packages from localStorage:', parsedPackages.length);
+          setPackages(parsedPackages);
         } else {
           // If not in local storage, use initial data and save it
           localStorage.setItem('scormPackages', JSON.stringify(initialPackages));
@@ -67,6 +69,19 @@ const ScormPackagesList = () => {
   const handleDelete = (id) => {
     if (window.confirm('Are you sure you want to delete this SCORM package?')) {
       try {
+        // Find the package to delete
+        const packageToDelete = packages.find(pkg => pkg._id === id);
+        
+        // If it's a media-based package, revoke the objectURLs to prevent memory leaks
+        if (packageToDelete && packageToDelete.isMediaBased && packageToDelete.mediaFiles) {
+          packageToDelete.mediaFiles.forEach(file => {
+            if (file.objectURL) {
+              URL.revokeObjectURL(file.objectURL);
+              console.log('Revoked URL for:', file.name);
+            }
+          });
+        }
+        
         // Remove from state
         const updatedPackages = packages.filter(pkg => pkg._id !== id);
         setPackages(updatedPackages);
@@ -114,9 +129,14 @@ const ScormPackagesList = () => {
           <h2 className="page-title">My SCORM Courses</h2>
           <p className="page-subtitle">Browse and manage your e-learning content</p>
         </div>
-        <Link to="/upload" className="btn btn-primary">
-          + Upload New Course
-        </Link>
+        <div className="header-actions">
+          <Link to="/upload" className="btn btn-secondary">
+            Upload SCORM
+          </Link>
+          <Link to="/builder" className="btn btn-primary">
+            + Create Media Course
+          </Link>
+        </div>
       </div>
 
       {packages.length === 0 ? (
@@ -124,24 +144,42 @@ const ScormPackagesList = () => {
           <div className="empty-icon">📚</div>
           <h3>No courses yet</h3>
           <p>You haven't uploaded any SCORM packages yet. Upload one to get started!</p>
-          <Link to="/upload" className="btn btn-primary">Upload Your First Course</Link>
+          <div className="empty-actions">
+            <Link to="/upload" className="btn btn-secondary">Upload SCORM</Link>
+            <Link to="/builder" className="btn btn-primary">Create Media Course</Link>
+          </div>
         </div>
       ) : (
         <div className="grid">
           {packages.map((pkg) => (
             <div key={pkg._id} className="card course-card">
               <div className="course-card-body">
-                <h3>{pkg.title}</h3>
+                <h3>
+                  {pkg.title}
+                  {pkg.isMediaBased && (
+                    <span className="media-badge">Media-Based</span>
+                  )}
+                </h3>
                 <p>{pkg.description || 'No description available'}</p>
                 <div className="metadata">
                   <span>
                     <strong>Uploaded:</strong> {new Date(pkg.uploadDate).toLocaleDateString()}
                   </span>
+                  {pkg.fileCount && (
+                    <span>
+                      <strong>Files:</strong> {pkg.fileCount}
+                    </span>
+                  )}
+                  {pkg.isMediaBased && pkg.mediaCount && (
+                    <span className="media-count">
+                      <strong>Media:</strong> {pkg.mediaCount} files (images/videos)
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="course-card-footer">
                 <Link to={`/player/${pkg._id}`} className="btn btn-primary">
-                  Launch Course
+                  {pkg.isMediaBased ? 'View Media' : 'Launch Course'}
                 </Link>
                 <button 
                   onClick={() => handleDelete(pkg._id)} 

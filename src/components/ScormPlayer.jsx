@@ -94,10 +94,49 @@ const ScormPlayer = () => {
         }
 
         if (packageData) {
+          if (packageData.isMediaBased) {
+            console.log('Found media-based package:', packageData._id);
+            console.log('Media files:', packageData.mediaFiles ? packageData.mediaFiles.length : 0);
+            
+            if (packageData.mediaFiles && packageData.mediaFiles.length > 0) {
+              // Verify that objectURLs are valid
+              const validURLs = packageData.mediaFiles.filter(file => {
+                try {
+                  // Test if the URL is still valid (won't throw an error)
+                  return !!file.objectURL;
+                } catch (err) {
+                  console.error('Invalid objectURL for file:', file.name, err);
+                  return false;
+                }
+              });
+              
+              console.log('Valid object URLs:', validURLs.length, 'of', packageData.mediaFiles.length);
+              
+              if (validURLs.length === 0) {
+                // No valid URLs found, show an error
+                packageData.mediaFilesError = true;
+                console.error('No valid object URLs found in package. Browser may have cleared them.');
+              }
+            } else {
+              console.error('Media-based package has no media files array or it\'s empty');
+              packageData.mediaFilesError = true;
+            }
+          }
           setScormPackage(packageData);
           
+          // Check if this is a media-based SCORM package
+          if (packageData.isMediaBased) {
+            console.log('This is a media-based SCORM package');
+            
+            // If there are media files, set the first one as selected
+            if (packageData.mediaFiles && packageData.mediaFiles.length > 0) {
+              setSelectedFile(packageData.mediaFiles[0].name);
+              console.log(`Selected first media file: ${packageData.mediaFiles[0].name}`);
+              setActiveTab('content'); // Make sure we're on the content tab
+            }
+          }
           // Check if this package has nested zip files
-          if (packageData.nestedZipInfo && packageData.nestedZipInfo.hasNestedZips) {
+          else if (packageData.nestedZipInfo && packageData.nestedZipInfo.hasNestedZips) {
             setHasNestedZip(true);
             
             if (packageData.nestedZipInfo.extractedNestedZip) {
@@ -118,18 +157,20 @@ const ScormPlayer = () => {
             setPackageStructure(packageData.fileStructure);
           }
           
-          // If the package has a main file, set it as selected
-          if (packageData.mainFile) {
-            setSelectedFile(packageData.mainFile);
-            console.log(`Setting main file to: ${packageData.mainFile}`);
-          } else if (packageData.files && packageData.files.length > 0) {
-            // Find any HTML file to display
-            const htmlFile = packageData.files.find(f => 
-              f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
-            );
-            if (htmlFile) {
-              setSelectedFile(htmlFile.name);
-              console.log(`No main file defined, using: ${htmlFile.name}`);
+          // If the package has a main file and it's not a media-based package, set it as selected
+          if (!packageData.isMediaBased) {
+            if (packageData.mainFile && !selectedFile) {
+              setSelectedFile(packageData.mainFile);
+              console.log(`Setting main file to: ${packageData.mainFile}`);
+            } else if (packageData.files && packageData.files.length > 0 && !selectedFile) {
+              // Find any HTML file to display
+              const htmlFile = packageData.files.find(f => 
+                f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
+              );
+              if (htmlFile) {
+                setSelectedFile(htmlFile.name);
+                console.log(`No main file defined, using: ${htmlFile.name}`);
+              }
             }
           }
           
@@ -147,7 +188,7 @@ const ScormPlayer = () => {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [id, userId]);
+  }, [id, userId, selectedFile]);
 
   // Save progress to localStorage
   const saveProgress = (newProgress) => {
@@ -645,6 +686,195 @@ const ScormPlayer = () => {
     console.log("Test tab activated");
   };
 
+  // Navigation function for media-based packages
+  const navigateMedia = (direction) => {
+    if (!scormPackage?.mediaFiles || !scormPackage.mediaFiles.length) {
+      console.log('No media files to navigate');
+      return;
+    }
+    
+    const mediaFiles = scormPackage.mediaFiles;
+    const currentIndex = mediaFiles.findIndex(file => file.name === selectedFile);
+    
+    if (currentIndex === -1) {
+      console.log('Current file not found in media files');
+      return;
+    }
+    
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = currentIndex < mediaFiles.length - 1 ? currentIndex + 1 : currentIndex;
+    } else {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+    }
+    
+    if (newIndex !== currentIndex) {
+      setSelectedFile(mediaFiles[newIndex].name);
+      console.log(`Navigated to ${direction}: ${mediaFiles[newIndex].name}`);
+    }
+    
+    // Update progress based on position in the sequence
+    const progress = Math.min(Math.round((newIndex + 1) / mediaFiles.length * 100), 100);
+    setProgress(progress);
+    saveProgress(progress);
+  };
+
+  // Helper function to find current media file
+  const getCurrentMediaFile = () => {
+    if (!scormPackage?.mediaFiles || !selectedFile) return null;
+    return scormPackage.mediaFiles.find(f => f.name === selectedFile);
+  };
+
+  // Helper function to get current media index
+  const getCurrentMediaIndex = () => {
+    if (!scormPackage?.mediaFiles || !selectedFile) return -1;
+    return scormPackage.mediaFiles.findIndex(f => f.name === selectedFile);
+  };
+
+  // For media-based packages, render the media player
+  const renderMediaContent = () => {
+    // First check if there was an error with the media files
+    if (scormPackage.mediaFilesError) {
+      return (
+        <div className="media-error">
+          <h3>Media Content Unavailable</h3>
+          <p>The media files for this course are no longer available. This may happen if:</p>
+          <ul>
+            <li>You've refreshed the page (objectURLs don't persist across page refreshes)</li>
+            <li>You've reopened the browser after closing it</li>
+            <li>The browser has cleared temporary memory</li>
+          </ul>
+          <p>Please try to build and download the package again.</p>
+        </div>
+      );
+    }
+    
+    const currentFile = getCurrentMediaFile();
+    const currentIndex = getCurrentMediaIndex();
+    
+    if (!currentFile) {
+      return (
+        <div className="no-media-selected">
+          <p>No media file selected or media file not found.</p>
+          <p>Please select a media file from the available list.</p>
+        </div>
+      );
+    }
+    
+    console.log('Rendering media file:', currentFile);
+    
+    // Check if objectURL exists
+    if (!currentFile.objectURL) {
+      return (
+        <div className="media-error">
+          <h3>Media File Unavailable</h3>
+          <p>The selected media file ({currentFile.name}) is no longer available in memory.</p>
+          <p>Please try to build and download the package again.</p>
+        </div>
+      );
+    }
+    
+    const isImage = currentFile.type.startsWith('image/');
+    const isVideo = currentFile.type.startsWith('video/');
+    
+    if (isImage) {
+      return (
+        <div className="media-viewer image-viewer">
+          <div className="media-container">
+            <img 
+              src={currentFile.objectURL} 
+              alt={currentFile.name}
+              className="media-content"
+              onLoad={() => {
+                console.log('Image loaded successfully:', currentFile.name);
+                const mediaFiles = scormPackage.mediaFiles || [];
+                if (mediaFiles.length > 0) {
+                  const progress = Math.min(Math.round((currentIndex + 1) / mediaFiles.length * 100), 100);
+                  setProgress(progress);
+                  saveProgress(progress);
+                }
+              }}
+              onError={(e) => {
+                console.error('Error loading image:', currentFile.name);
+                e.target.onerror = null;
+                e.target.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='200'><rect width='100%' height='100%' fill='%23f0f0f0'/><text x='50%' y='50%' font-family='Arial' font-size='14' text-anchor='middle' dominant-baseline='middle'>Image Not Available</text></svg>";
+              }}
+            />
+          </div>
+          <div className="media-counter">
+            <strong>{currentIndex + 1}</strong> of <strong>{scormPackage.mediaFiles.length}</strong> media files
+          </div>
+          <div className="media-info">
+            <h3>Image: {currentFile.name}</h3>
+            <div className="media-navigation">
+              <button onClick={() => navigateMedia('prev')} className="btn btn-secondary">Previous</button>
+              <button onClick={() => navigateMedia('next')} className="btn btn-secondary">Next</button>
+              <button className="btn btn-primary" onClick={() => handleCompleteDemo()}>
+                Mark All as Viewed
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    } else if (isVideo) {
+      return (
+        <div className="media-viewer video-viewer">
+          <div className="media-container">
+            <video 
+              src={currentFile.objectURL}
+              controls
+              autoPlay
+              className="media-content"
+              onEnded={() => {
+                console.log('Video ended, advancing to next');
+                navigateMedia('next');
+              }}
+              onLoadedData={() => {
+                console.log('Video loaded successfully:', currentFile.name);
+                const mediaFiles = scormPackage.mediaFiles || [];
+                if (mediaFiles.length > 0) {
+                  const progress = Math.min(Math.round((currentIndex + 1) / mediaFiles.length * 100), 100);
+                  setProgress(progress);
+                  saveProgress(progress);
+                }
+              }}
+              onError={(e) => {
+                console.error('Error loading video:', currentFile.name);
+                e.target.parentNode.innerHTML = "<div class='video-error'>Video content not available or format not supported</div>";
+              }}
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
+          <div className="media-counter">
+            <strong>{currentIndex + 1}</strong> of <strong>{scormPackage.mediaFiles.length}</strong> media files
+          </div>
+          <div className="media-info">
+            <h3>Video: {currentFile.name}</h3>
+            <div className="media-navigation">
+              <button onClick={() => navigateMedia('prev')} className="btn btn-secondary">Previous</button>
+              <button onClick={() => navigateMedia('next')} className="btn btn-secondary">Next</button>
+              <button className="btn btn-primary" onClick={() => handleCompleteDemo()}>
+                Mark All as Viewed
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="unsupported-media">
+          <p>Unsupported media type: {currentFile.type}</p>
+          <p>Please try a different file.</p>
+          <div className="media-navigation">
+            <button onClick={() => navigateMedia('prev')} className="btn btn-secondary">Previous</button>
+            <button onClick={() => navigateMedia('next')} className="btn btn-secondary">Next</button>
+          </div>
+        </div>
+      );
+    }
+  };
+
   if (loading) {
     return (
       <div className="card">
@@ -850,7 +1080,9 @@ const ScormPlayer = () => {
                     )}
   
                   <div className="content-display">
-                    {selectedFile.endsWith('.zip') ? (
+                    {scormPackage.isMediaBased ? (
+                      renderMediaContent()
+                    ) : selectedFile.endsWith('.zip') ? (
                       <div className="zip-content-display">
                         <div className="zip-icon large">📦</div>
                         <h3>ZIP File Selected</h3>
@@ -862,7 +1094,7 @@ const ScormPlayer = () => {
                         <iframe 
                           ref={iframeRef}
                           src={`data:text/html;charset=utf-8,${encodeURIComponent(
-                            scormPackage.files.find(f => f.name === selectedFile)?.content || 
+                            scormPackage.files?.find(f => f.name === selectedFile)?.content || 
                             '<html><body><p>Content not available</p></body></html>'
                           )}`}
                           className="content-iframe"
