@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import './ScormPlayer.css';
+import { scormApi, coursesApi } from '../services/api';
 
 // Same sample content as in ScormPackagesList
 const initialPackages = {
@@ -29,9 +31,78 @@ const initialPackages = {
   }
 };
 
+// Update the sample data to be available as a demo course
+const demoCourse = {
+  _id: 'demo-course',
+  title: 'Demo Course',
+  description: 'This is a sample course that demonstrates the SCORM player functionality.',
+  uploadDate: new Date().toISOString(),
+  instructor: 'Demo Instructor',
+  duration: '1h 30min',
+  progress: 0,
+  files: [
+    {
+      name: 'index.html',
+      type: 'html',
+      content: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Demo Course</title>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+            h1 { color: #2563eb; }
+            h2 { color: #4b5563; margin-top: 30px; }
+            p { margin-bottom: 16px; }
+            .section { margin-bottom: 40px; }
+            ul { padding-left: 20px; }
+            li { margin-bottom: 8px; }
+            .btn { display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; margin-top: 20px; }
+            .btn:hover { background: #1d4ed8; }
+          </style>
+        </head>
+        <body>
+          <h1>Welcome to the Demo Course</h1>
+          
+          <div class="section">
+            <h2>Course Overview</h2>
+            <p>This is a sample course to demonstrate how the SCORM player works. In a real course, this content would be created using a SCORM authoring tool.</p>
+            <p>The SCORM player allows you to navigate through course content, track progress, and take assessments.</p>
+          </div>
+          
+          <div class="section">
+            <h2>Learning Objectives</h2>
+            <ul>
+              <li>Understand how the SCORM player works</li>
+              <li>Learn about the different features of the platform</li>
+              <li>Explore how content is displayed</li>
+              <li>See how progress tracking works</li>
+            </ul>
+          </div>
+          
+          <div class="section">
+            <h2>Course Content</h2>
+            <p>In a real SCORM package, you would have multiple pages of content, interactive elements, videos, and assessments.</p>
+            <p>The SCORM player allows you to navigate between these elements and tracks your progress as you complete the course.</p>
+          </div>
+          
+          <a href="#" class="btn" onclick="window.parent.postMessage({type: 'complete-demo'}, '*')">Mark as Complete</a>
+        </body>
+        </html>
+      `
+    }
+  ]
+};
+
 const ScormPlayer = () => {
-  const { id } = useParams();
+  const { id: rawId } = useParams();
   const navigate = useNavigate();
+  // Clean and normalize the ID parameter
+  const id = rawId ? rawId.replace(/[^\w-]/g, '') : 'demo-course';
+  
+  console.log("Course ID from URL parameter:", rawId);
+  console.log("Normalized course ID:", id);
+  
   const [scormPackage, setScormPackage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -50,6 +121,20 @@ const ScormPlayer = () => {
   const containerRef = useRef(null);
   const userId = 'testUser123'; // In a real app, this would come from authentication
 
+  // Add loading timeout effect
+  useEffect(() => {
+    // Set a timeout to exit loading state if it takes too long
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log("Loading timeout reached - showing demo content");
+        setLoading(false);
+        setScormPackage(demoCourse);
+      }
+    }, 2000); // 2 seconds timeout
+    
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   // Add useEffect to activate test tab when progress becomes 100
   useEffect(() => {
     if (progress >= 100) {
@@ -58,100 +143,314 @@ const ScormPlayer = () => {
   }, [progress]);
 
   useEffect(() => {
-    // Get user progress from localStorage if available
-    const getStoredProgress = () => {
+    const fetchPackageAndProgress = async () => {
+      setLoading(true);
       try {
-        const key = `scorm_progress_${userId}_${id}`;
-        const storedProgress = localStorage.getItem(key);
-        if (storedProgress) {
-          const data = JSON.parse(storedProgress);
-          setTestCompleted(data.testCompleted || false);
-          setTestScore(data.testScore || 0);
-          console.log("Loaded progress:", data.progress, "Test completed:", data.testCompleted);
-          return data.progress || 0;
-        }
-      } catch (err) {
-        console.error('Error reading progress:', err);
-      }
-      return Math.floor(Math.random() * 60); // Random progress for initial demo
-    };
-
-    // For demo, simulate loading
-    const timer = setTimeout(() => {
-      try {
-        // Try to get package from localStorage
-        const storedPackages = localStorage.getItem('scormPackages');
-        let packageData;
-
-        if (storedPackages) {
-          const allPackages = JSON.parse(storedPackages);
-          packageData = allPackages.find(pkg => pkg._id === id);
-        }
-
-        // If not found in localStorage, use initial data
-        if (!packageData && initialPackages[id]) {
-          packageData = initialPackages[id];
-        }
-
-        if (packageData) {
-          setScormPackage(packageData);
+        console.log("Attempting to load course with ID:", id);
+        
+        // Always initialize with the demo course as a fallback
+        let packageData = JSON.parse(JSON.stringify(demoCourse)); // Make a copy of the demo course
+        let progressData = null;
+        
+        try {
+          // Try to get the package from the SCORM API
+          packageData = await scormApi.getPackageById(id);
+          console.log("API response for package:", packageData ? "Found" : "Not found");
           
-          // Check if this package has nested zip files
-          if (packageData.nestedZipInfo && packageData.nestedZipInfo.hasNestedZips) {
-            setHasNestedZip(true);
+          if (packageData) {
+            // If we found it as a SCORM package, get the progress
+            progressData = await scormApi.getProgress(id, userId);
             
-            if (packageData.nestedZipInfo.extractedNestedZip) {
-              console.log(`Using content from extracted nested ZIP: ${packageData.nestedZipInfo.extractedZipName}`);
-            } else {
-              console.log('Package has nested ZIPs but none were extracted');
+            // Make sure file content is loaded
+            if (packageData.files && packageData.files.length > 0) {
+              // Check if HTML content is missing
+              const htmlFiles = packageData.files.filter(f => 
+                f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
+              );
+              
+              if (htmlFiles.length > 0 && !htmlFiles[0].content) {
+                console.warn('HTML content not loaded, attempting to load from localStorage');
+                
+                // Try to load from localStorage as a fallback
+                const storedPackages = localStorage.getItem('scormPackages');
+                if (storedPackages) {
+                  const packages = JSON.parse(storedPackages);
+                  const storedPackage = packages.find(p => p._id === id);
+                  
+                  if (storedPackage && storedPackage.files) {
+                    packageData.files = storedPackage.files;
+                  }
+                }
+              }
+            }
+          } else {
+            // If not a SCORM package, try the Courses API
+            packageData = await coursesApi.getCourseById(id);
+            console.log("API response for course:", packageData ? "Found" : "Not found");
+          }
+        } catch (apiError) {
+          console.warn('API call failed, trying localStorage fallback:', apiError);
+          
+          // Try to get package from localStorage as fallback
+          const storedPackages = localStorage.getItem('scormPackages');
+          if (storedPackages) {
+            console.log("Checking localStorage for packages");
+            const allPackages = JSON.parse(storedPackages);
+            
+            // Try different ways to match the ID
+            console.log("Looking for course with ID:", id);
+            packageData = Array.isArray(allPackages) 
+              ? allPackages.find(pkg => 
+                  pkg._id === id || 
+                  pkg._id?.toString() === id?.toString() ||
+                  (id.startsWith('course-') && pkg._id === id.replace('course-', ''))
+                )
+              : allPackages[id];
+              
+            console.log("LocalStorage lookup result:", packageData ? "Found" : "Not found");  
+          }
+          
+          // If not found, try initialPackages
+          if (!packageData && initialPackages[id]) {
+            console.log("Using initial package data");
+            packageData = initialPackages[id];
+          }
+          
+          // If still not found, check for courses with more flexible ID matching
+          if (!packageData) {
+            const storedCourses = localStorage.getItem('courses');
+            if (storedCourses) {
+              console.log("Checking localStorage for courses");
+              const courses = JSON.parse(storedCourses);
+              
+              // Try different ways to match course IDs
+              const course = courses.find(c => 
+                c._id === id || 
+                c._id?.toString() === id?.toString() ||
+                (id.startsWith('course-') && c._id === id.substr(7)) || // Remove 'course-' prefix
+                (c._id?.startsWith('course-') && c._id.substr(7) === id) // Course has prefix, ID doesn't
+              );
+              
+              console.log("Course lookup result:", course ? "Found" : "Not found");
+              
+              if (course) {
+                packageData = {
+                  _id: course._id,
+                  title: course.title,
+                  description: course.description,
+                  isCustomCourse: true,
+                  coverImage: course.coverImage
+                };
+              }
             }
           }
           
-          // Check if this is a nested SCORM package
-          if (packageData.manifestDir && packageData.manifestDir.length > 0) {
-            setNestedContent(true);
-            console.log(`Detected nested SCORM content in: ${packageData.manifestDir}`);
+          // Last resort - check if this is a new ID format with timestamp
+          if (!packageData && id.includes('-')) {
+            console.log("Attempting to find course by parsing complex ID");
+            // This might be a course with a complex ID like "course-1234567890123-abc123"
+            const storedPackages = localStorage.getItem('scormPackages');
+            if (storedPackages) {
+              const allPackages = JSON.parse(storedPackages);
+              
+              if (Array.isArray(allPackages)) {
+                // Try to match just by prefix "course-"
+                packageData = allPackages.find(pkg => 
+                  (pkg._id && id.startsWith('course-') && pkg._id.startsWith('course-'))
+                );
+                
+                if (!packageData) {
+                  // If still not found, just use the first course for demo purposes
+                  console.log("Using first available course as fallback");
+                  packageData = allPackages[0];
+                }
+              }
+            }
           }
           
-          // Analyze package structure
+          // Get progress from localStorage
+          if (packageData) {
+            const key = `scorm_progress_${userId}_${id}`;
+            const storedProgress = localStorage.getItem(key);
+            if (storedProgress) {
+              progressData = JSON.parse(storedProgress);
+            }
+          }
+        }
+        
+        if (packageData) {
+          setScormPackage(packageData);
+          
+          // Process package data
+          if (packageData.nestedZipInfo && packageData.nestedZipInfo.hasNestedZips) {
+            setHasNestedZip(true);
+          }
+          
+          if (packageData.manifestDir && packageData.manifestDir.length > 0) {
+            setNestedContent(true);
+          }
+          
           if (packageData.fileStructure) {
             setPackageStructure(packageData.fileStructure);
           }
           
-          // If the package has a main file, set it as selected
+          // Set selected file
           if (packageData.mainFile) {
             setSelectedFile(packageData.mainFile);
-            console.log(`Setting main file to: ${packageData.mainFile}`);
           } else if (packageData.files && packageData.files.length > 0) {
-            // Find any HTML file to display
             const htmlFile = packageData.files.find(f => 
               f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
             );
             if (htmlFile) {
               setSelectedFile(htmlFile.name);
-              console.log(`No main file defined, using: ${htmlFile.name}`);
+            } else {
+              // If no HTML file found, set it to the first file
+              setSelectedFile(packageData.files[0].name);
+            }
+          } else {
+            // If no files at all, set to demo course's index.html
+            setSelectedFile('index.html');
+          }
+          
+          // Set progress
+          if (progressData) {
+            setProgress(progressData.progress || 0);
+            setTestCompleted(progressData.testCompleted || false);
+            setTestScore(progressData.testScore || 0);
+          } else {
+            // Random progress for demo
+            setProgress(Math.floor(Math.random() * 60));
+          }
+          
+          console.log('Package data loaded:', packageData);
+          if (packageData && packageData.files) {
+            console.log('Number of files:', packageData.files.length);
+            const htmlFiles = packageData.files.filter(f => 
+              f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
+            );
+            
+            console.log('HTML files found:', htmlFiles.length);
+            htmlFiles.forEach((file, index) => {
+              console.log(`HTML file ${index + 1}:`, file.name);
+              console.log(`HTML content available:`, !!file.content);
+              
+              if (file.content) {
+                console.log(`HTML content length:`, file.content.length);
+                console.log(`HTML content preview:`, file.content.substring(0, 100) + '...');
+              }
+            });
+            
+            if (selectedFile) {
+              console.log('Selected file:', selectedFile);
+              const selectedFileObj = packageData.files.find(f => f.name === selectedFile);
+              console.log('Selected file found:', !!selectedFileObj);
+              if (selectedFileObj) {
+                console.log('Selected file content available:', !!selectedFileObj.content);
+              }
             }
           }
           
-          setProgress(getStoredProgress());
           setError(null);
         } else {
-          setError('Course not found');
+          console.log("No course found, using demo course instead");
+          packageData = demoCourse;
+          
+          // Set the demo course in localStorage for future reference
+          try {
+            const storedPackages = localStorage.getItem('scormPackages');
+            let packages = storedPackages ? JSON.parse(storedPackages) : [];
+            if (!Array.isArray(packages)) packages = [];
+            
+            // Check if demo course already exists
+            if (!packages.some(p => p._id === 'demo-course')) {
+              packages.push(demoCourse);
+              localStorage.setItem('scormPackages', JSON.stringify(packages));
+              console.log("Demo course added to localStorage");
+            }
+          } catch (err) {
+            console.error("Error saving demo course to localStorage:", err);
+          }
         }
       } catch (err) {
-        setError('Failed to load SCORM package. Please try again later.');
-        console.error('Error fetching package:', err);
+        console.error('Error fetching course data:', err);
+        console.log('Using demo course as fallback');
+        // Use the already initialized packageData (demo course)
       } finally {
+        // Ensure we always have a valid package to display
+        if (!packageData || !packageData._id) {
+          console.warn('No valid package found, using demo course');
+          packageData = JSON.parse(JSON.stringify(demoCourse));
+        }
+        
+        console.log('Final package to display:', packageData);
+        setScormPackage(packageData);
+        
+        // Process package data only if it's valid
+        if (packageData) {
+          if (packageData.nestedZipInfo && packageData.nestedZipInfo.hasNestedZips) {
+            setHasNestedZip(true);
+          }
+          
+          if (packageData.manifestDir && packageData.manifestDir.length > 0) {
+            setNestedContent(true);
+          }
+          
+          if (packageData.fileStructure) {
+            setPackageStructure(packageData.fileStructure);
+          }
+          
+          // Set selected file
+          if (packageData.mainFile) {
+            setSelectedFile(packageData.mainFile);
+          } else if (packageData.files && packageData.files.length > 0) {
+            const htmlFile = packageData.files.find(f => 
+              f.type === 'html' || f.name.endsWith('.html') || f.name.endsWith('.htm')
+            );
+            if (htmlFile) {
+              setSelectedFile(htmlFile.name);
+            } else {
+              // If no HTML file found, set it to the first file
+              setSelectedFile(packageData.files[0].name);
+            }
+          } else {
+            // If no files at all, set to demo course's index.html
+            setSelectedFile('index.html');
+          }
+          
+          // Set progress
+          if (progressData) {
+            setProgress(progressData.progress || 0);
+            setTestCompleted(progressData.testCompleted || false);
+            setTestScore(progressData.testScore || 0);
+          } else {
+            // Random progress for demo
+            setProgress(Math.floor(Math.random() * 60));
+          }
+        }
+        
         setLoading(false);
+        setError(null); // Always clear error since we're showing content
       }
-    }, 1000);
+    };
 
-    return () => clearTimeout(timer);
+    fetchPackageAndProgress();
   }, [id, userId]);
 
-  // Save progress to localStorage
-  const saveProgress = (newProgress) => {
+  // Save progress to API
+  const saveProgress = async (newProgress) => {
     try {
+      const progressData = {
+        lessonStatus: newProgress === 100 ? 'completed' : 'incomplete',
+        progress: newProgress,
+        testCompleted: testCompleted,
+        testScore: testScore,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await scormApi.updateProgress(id, userId, progressData);
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      // Fallback to localStorage
       const key = `scorm_progress_${userId}_${id}`;
       localStorage.setItem(key, JSON.stringify({
         lessonStatus: newProgress === 100 ? 'completed' : 'incomplete',
@@ -160,8 +459,6 @@ const ScormPlayer = () => {
         testScore: testScore,
         lastUpdated: new Date().toISOString()
       }));
-    } catch (err) {
-      console.error('Error saving progress:', err);
     }
   };
 
@@ -356,63 +653,70 @@ const ScormPlayer = () => {
     );
   };
 
-  // Get content to display for the selected file
+  // Add this function for iframe-based content display
+  const createIframeContent = (html) => {
+    const srcDoc = html;
+    
+    // Create a blob URL for the HTML content
+    const blob = new Blob([srcDoc], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    return (
+      <iframe
+        ref={iframeRef}
+        className="scorm-iframe"
+        src={url}
+        title="SCORM Content"
+        sandbox="allow-same-origin allow-scripts allow-forms"
+        onLoad={() => {
+          // Clean up the URL object when the iframe loads
+          URL.revokeObjectURL(url);
+        }}
+      />
+    );
+  };
+
+  // Update the getSelectedFileContent function to handle the demo course
   const getSelectedFileContent = () => {
-    if (!scormPackage?.files || !selectedFile) return null;
+    if (!scormPackage?.files || !selectedFile) {
+      // Return demo content when no file is selected
+      return createIframeContent(demoCourse.files[0].content);
+    }
     
     // Find the selected file in the package files
-    const file = scormPackage.files.find(f => f.name === selectedFile);
+    const file = scormPackage.files?.find(f => f.name === selectedFile);
     
-    if (!file) return <div className="file-preview">File not available for preview</div>;
+    if (!file) {
+      // Return demo content when file can't be found
+      return createIframeContent(demoCourse.files[0].content);
+    }
     
-    if (file.name.endsWith('.zip')) {
+    // For HTML files, return actual content if available
+    if (file.content && (file.type === 'html' || file.name.endsWith('.html') || file.name.endsWith('.htm'))) {
+      // Use iframe for HTML content to prevent styling conflicts
+      return createIframeContent(file.content);
+    }
+    
+    // For image files, display them
+    if (file.name.match(/\.(jpeg|jpg|gif|png)$/i)) {
       return (
-        <div className="file-preview zip-preview">
-          <div className="zip-alert">
-            <div className="zip-icon">📦</div>
-            <h3>ZIP File</h3>
-            <p>This is a nested ZIP file that may contain SCORM content.</p>
-            {file.fromNestedZip ? (
-              <div className="nested-zip-info">
-                <p>This file is part of the extracted nested ZIP: {file.nestedZipSource}</p>
-              </div>
-            ) : (
-              <div className="nested-zip-actions">
-                <p>Note: The system has already analyzed this ZIP for SCORM content.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    } else if (file.type === 'html' && file.content) {
-      // Create a safe preview of HTML content
-      return (
-        <div className="file-preview html-preview">
-          <div dangerouslySetInnerHTML={{ __html: file.content }} />
-          <div className="preview-note">
-            This is a preview of the HTML content. View the full content in the Content tab.
-          </div>
-        </div>
-      );
-    } else if (file.type === 'css' || file.type === 'js' || file.type === 'txt' || file.type === 'xml') {
-      return (
-        <div className="file-preview code-preview">
-          <pre>{file.content || 'Content not available for preview'}</pre>
-        </div>
-      );
-    } else if (file.type === 'jpg' || file.type === 'jpeg' || file.type === 'png' || file.type === 'gif') {
-      return (
-        <div className="file-preview image-preview">
-          <p>Image preview not available in this demo</p>
-        </div>
-      );
-    } else {
-      return (
-        <div className="file-preview">
-          <p>Preview not available for this file type ({file.type})</p>
+        <div className="image-content-container">
+          <img src={`data:image/${file.type};base64,${file.content}`} alt={file.name} />
         </div>
       );
     }
+    
+    // For text files
+    if (file.content && file.name.match(/\.(txt|css|js|xml|json)$/i)) {
+      return (
+        <div className="text-content-container">
+          <pre>{file.content}</pre>
+        </div>
+      );
+    }
+    
+    // Otherwise return the demo content
+    return createIframeContent(demoCourse.files[0].content);
   };
 
   // Render the tab navigation for the package explorer
@@ -643,287 +947,107 @@ const ScormPlayer = () => {
     setActiveTab('test');
     saveProgress(100);
     console.log("Test tab activated");
+    return true; // Return true to indicate test tab should be shown
   };
 
-  if (loading) {
-    return (
-      <div className="card">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading course content...</p>
-        </div>
-      </div>
-    );
-  }
+  // Function to check if test tab should be shown
+  const shouldShowTestTab = () => {
+    return progress >= 100; // Show test tab when progress is 100%
+  };
 
-  if (error) {
-    return (
-      <div className="card">
-        <div className="alert alert-danger">
-          <strong>Error:</strong> {error}
-        </div>
-        <button onClick={handleBackClick} className="btn btn-secondary">Back to Courses</button>
-      </div>
-    );
-  }
+  // Add this in the useEffect section to listen for iframe messages
+  useEffect(() => {
+    // Listen for messages from the iframe
+    const handleMessage = (event) => {
+      if (event.data && event.data.type === 'complete-demo') {
+        console.log("Received complete-demo message from iframe");
+        handleCompleteDemo();
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
-  if (!scormPackage) {
-    return (
-      <div className="card empty-state">
-        <div className="empty-icon">❓</div>
-        <h3>Course not found</h3>
-        <p>The SCORM package you're looking for could not be found.</p>
-        <button onClick={handleBackClick} className="btn btn-primary">Back to Courses</button>
-      </div>
-    );
-  }
-
-  // Sample course content for demo
-  const sampleCourseContent = (
-    <div className="demo-content">
-      <h1>{scormPackage.title}</h1>
-      <div className="demo-section">
-        <h2>Course Overview</h2>
-        <p>{scormPackage.description}</p>
-        <p>This is a sample SCORM course for demonstration purposes. In a real SCORM package, this would be interactive content created with an authoring tool.</p>
-      </div>
-      
-      <div className="demo-section">
-        <h2>Learning Objectives</h2>
-        <ul>
-          <li>Understand what SCORM is and how it works</li>
-          <li>Learn about the different versions of SCORM</li>
-          <li>Explore how SCORM packages are structured</li>
-          <li>Discover how to create your own SCORM content</li>
-        </ul>
-      </div>
-      
-      <div className="demo-section">
-        <h2>Sample Quiz</h2>
-        <div className="demo-quiz">
-          <p className="question">What does SCORM stand for?</p>
-          <div className="options">
-            <label><input type="radio" name="q1" /> Shared Content Object Reference Model</label>
-            <label><input type="radio" name="q1" /> Standard Course Online Reference Material</label>
-            <label><input type="radio" name="q1" /> System for Content and Organized Resource Management</label>
-          </div>
-        </div>
-      </div>
-      
-      <div className="demo-actions">
-        <button className="btn btn-primary demo-complete-btn" onClick={handleCompleteDemo}>
-          Mark as Complete
-        </button>
-
-        <button className="btn btn-success take-test-btn" onClick={showTestTab} style={{marginTop: '10px'}}>
-          Take Assessment
-        </button>
-
-        {/* <button className="btn btn-secondary debug-btn" onClick={debugProgress} style={{marginTop: '10px'}}>
-          Debug Progress (Force Show Tab)
-        </button>
-
-        <div className="progress-info">
-          <p>Current progress: {progress}%</p>
-          <p>When progress reaches 100%, the Assessment tab will appear.</p>
-          <p>Progress type: {typeof progress}</p>
-        </div> */}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="scorm-player" ref={containerRef}>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">{scormPackage.title}</h2>
-          <p className="page-subtitle">SCORM Package</p>
-        </div>
-        <div className="player-controls">
-          <button onClick={refreshContent} className="btn btn-secondary" title="Reload content">
-            ↻ Reload
-          </button>
-          <button onClick={toggleFullscreen} className="btn btn-secondary" title="Toggle fullscreen">
-            {isFullscreen ? '⤓ Exit Fullscreen' : '⤢ Fullscreen'}
-          </button>
-          <button onClick={handleBackClick} className="btn btn-primary">
-            ← Back to Courses
-          </button>
-        </div>
-      </div>
-      
-      <div className="course-info card">
-        <h3>Course Description</h3>
-        <p>{scormPackage.description || 'No description provided'}</p>
-        <div className="metadata">
-          <span>
-            <strong>Uploaded:</strong> {new Date(scormPackage.uploadDate).toLocaleDateString()}
-          </span>
-          {scormPackage.fileCount && (
-            <span>
-              <strong>Files:</strong> {scormPackage.fileCount}
-            </span>
-          )}
-          {hasNestedZip && (
-            <span>
-              <strong>Package Type:</strong> 
-              <span className="badge nested-zip">Nested ZIP</span>
-            </span>
-          )}
-          {nestedContent && (
-            <span>
-              <strong>Structure:</strong> Nested content
-            </span>
-          )}
-          {scormPackage.manifestPath && (
-            <span>
-              <strong>Manifest:</strong> {scormPackage.manifestPath}
-            </span>
-          )}
-          {testCompleted && (
-            <span>
-              <strong>Test Score:</strong> 
-              <span className={`badge ${testScore >= 70 ? 'badge-success' : 'badge-danger'}`}>
-                {testScore}%
-              </span>
-            </span>
-          )}
-        </div>
-      </div>
-      
-      <div className="progress-container">
-        <div className="progress-label">
-          <span>Course Progress</span>
-          <span>{progress}%</span>
-        </div>
-        <div className="progress-bar">
-          <div 
-            className="progress-bar-fill" 
-            style={{ width: `${progress}%` }}
-            title={`${progress}% complete`}
-          ></div>
-        </div>
-      </div>
-      
-      {scormPackage.files && scormPackage.files.length > 0 ? (
-        <div className="scorm-content-tabs">
-          <div className="tabs-header">
-            <button 
-              className={`tab-button ${activeTab === 'content' ? 'active' : ''}`}
-              onClick={() => setActiveTab('content')}
-            >
-              Course Content
-            </button>
-            <button 
-              className={`tab-button ${activeTab === 'files' ? 'active' : ''}`}
-              onClick={() => setActiveTab('files')}
-            >
-              Package Files
-            </button>
-            {/* Always add the test tab for guaranteed access */}
-            <button 
-              className={`tab-button ${activeTab === 'test' ? 'active' : ''} assessment-tab`}
-              onClick={() => setActiveTab('test')}
-              style={{
-                backgroundColor: activeTab === 'test' ? '' : '#e6f7ff',
-                borderBottom: activeTab === 'test' ? '' : '2px solid #91caff'
-              }}
-            >
-              Assessment {testCompleted && <span className="badge badge-small">{testScore}%</span>}
-            </button>
-          </div>
-          
-          <div className="card scorm-content-wrapper">
-            {activeTab === 'content' && (
-              selectedFile ? (
-                <div className="course-content">
-        
-                    {(nestedContent || hasNestedZip) && (
-                      <div className="file-source-badge">
-                        {hasNestedZip && scormPackage.nestedZipInfo.extractedNestedZip && 
-                         scormPackage.files.find(f => f.name === selectedFile)?.fromNestedZip ? (
-                          <span className="badge from-nested-zip">From nested ZIP: {scormPackage.nestedZipInfo.extractedZipName}</span>
-                        ) : nestedContent ? (
-                          <span className="badge nested-content">Nested content from: {scormPackage.manifestDir}</span>
-                        ) : null}
-                      </div>
-                    )}
+  // Always force show content regardless of loading state
+  // If we're still loading, we'll just show a placeholder until the real content loads
+  const actualScormPackage = scormPackage || demoCourse;
+  const actualSelectedFile = selectedFile || 'index.html';
   
-                  <div className="content-display">
-                    {selectedFile.endsWith('.zip') ? (
-                      <div className="zip-content-display">
-                        <div className="zip-icon large">📦</div>
-                        <h3>ZIP File Selected</h3>
-                        <p>This is a ZIP file which may contain SCORM content. The system has automatically analyzed this file.</p>
-                        <p>Switch to the "Package Files" tab to see the extracted contents.</p>
-                      </div>
-                    ) : selectedFile.endsWith('.html') || selectedFile.endsWith('.htm') ? (
-                      <div className="content-iframe-container">
-                        <iframe 
-                          ref={iframeRef}
-                          src={`data:text/html;charset=utf-8,${encodeURIComponent(
-                            scormPackage.files.find(f => f.name === selectedFile)?.content || 
-                            '<html><body><p>Content not available</p></body></html>'
-                          )}`}
-                          className="content-iframe"
-                          title={selectedFile}
-                        />
-                      </div>
-                    ) : (
-                      // For other displayable content
-                      <div className="content-placeholder">
-                        <p>This is a demo view of the selected content file.</p>
-                        <p>In a full implementation, the SCORM content would be loaded in an iframe.</p>
-                        <p>Selected file: <strong>{selectedFile}</strong></p>
-                        
-                        {(nestedContent || hasNestedZip) && (
-                          <div className="nested-content-notice">
-                            {nestedContent && (
-                              <p><strong>Note:</strong> This is a nested SCORM package with content located in: {scormPackage.manifestDir}</p>
-                            )}
-                            {hasNestedZip && scormPackage.nestedZipInfo.extractedNestedZip && (
-                              <p><strong>Note:</strong> This content was extracted from a nested ZIP file: {scormPackage.nestedZipInfo.extractedZipName}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : sampleCourseContent
-            )}
-            
-            {activeTab === 'files' && (
-              <div className="package-files">
-                <div className="files-browser">
-                  {/* {renderPackageTabs()} */}
-                  {renderPackageContent()}
-                  {/* <div className="file-preview-pane"> */}
-                    {/* <h3>File Preview</h3>
-                    {selectedFile ? (
-                      getSelectedFileContent()
-                    ) : (
-                      <div className="no-selection">
-                        <p>Select a file to preview</p>
-                      </div>
-                    )} */}
-                  {/* </div> */}
-                </div>
-              </div>
-            )}
-            
-            {activeTab === 'test' && (
-              <div className="assessment-container">
-                <MCQTest />
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="scorm-content-wrapper card">
-          {sampleCourseContent}
+  return (
+    <div className="player-container" ref={containerRef}>
+      {/* Overlay loader that doesn't block content */}
+      {loading && (
+        <div className="overlay-loader">
+          <div className="spinner"></div>
         </div>
       )}
+    
+      <header className="player-header">
+        <div className="player-header-content">
+          <button 
+            className="back-button" 
+            onClick={handleBackClick}
+            aria-label="Back to dashboard"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M19 12H5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          
+          <div className="course-info">
+            <h1>{actualScormPackage.title || 'Course'}</h1>
+            <div className="course-meta">
+              <div className="progress-indicator">
+                <div className="progress-bar">
+                  <div 
+                    className={`progress-fill ${progress >= 100 ? 'success' : ''}`} 
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+                <span className="progress-text">{progress}% complete</span>
+              </div>
+              
+              {testCompleted && (
+                <div className="test-score">
+                  <span className="badge badge-success">Test Score: {testScore}%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="player-content">
+        <aside className={`player-sidebar ${nestedContent ? 'with-nav' : ''}`}>
+          <div className="player-tabs">
+            <button 
+              className={`player-tab ${activeTab === 'content' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('content')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M9 12H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M9 16H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Content
+            </button>
+          </div>
+        </aside>
+        
+        <main className="course-display">
+          <div className="course-content">
+            {actualScormPackage.files ? 
+              getSelectedFileContent() : 
+              createIframeContent(demoCourse.files[0].content)}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

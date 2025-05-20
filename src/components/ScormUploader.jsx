@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
+import { scormApi } from '../services/api';
 
 const ScormUploader = () => {
   const navigate = useNavigate();
@@ -13,6 +14,26 @@ const ScormUploader = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [zipContents, setZipContents] = useState([]);
   const [processingStage, setProcessingStage] = useState('');
+  const [module, setModule] = useState(1);
+  const [modules, setModules] = useState([
+    {
+      id: 1,
+      title: 'MODULE 1',
+      items: [
+        { id: 101, type: 'introduction', title: 'Introduction' },
+        { id: 102, type: 'lesson', title: 'Lesson' },
+        { id: 103, type: 'quiz', title: 'Quiz' }
+      ]
+    },
+    {
+      id: 2,
+      title: 'MODULE 3',
+      items: [
+        { id: 201, type: 'lesson', title: 'Lesson' },
+        { id: 202, type: 'quiz', title: 'Quiz' }
+      ]
+    }
+  ]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -34,6 +55,7 @@ const ScormUploader = () => {
     // If it's a ZIP file, try to read its contents
     if (selectedFile.name.endsWith('.zip')) {
       try {
+        setProcessingStage('Analyzing ZIP contents...');
         const zip = new JSZip();
         const zipData = await zip.loadAsync(selectedFile);
         
@@ -43,16 +65,41 @@ const ScormUploader = () => {
         // Process each file in the ZIP
         for (const filename in zipData.files) {
           if (!zipData.files[filename].dir) {
-            fileList.push({
-              name: filename,
-              size: zipData.files[filename]._data.uncompressedSize
-            });
+            // For HTML, JS, and CSS files, attempt to read their text content for preview
+            if (filename.match(/\.(html|htm|js|css|xml|txt)$/i)) {
+              try {
+                const content = await zipData.files[filename].async('text');
+                const preview = content.length > 500 ? content.substring(0, 500) + '...' : content;
+                fileList.push({
+                  name: filename,
+                  size: zipData.files[filename]._data.uncompressedSize,
+                  type: filename.split('.').pop().toLowerCase(),
+                  preview
+                });
+              } catch (err) {
+                console.error(`Could not read content of ${filename}:`, err);
+                fileList.push({
+                  name: filename,
+                  size: zipData.files[filename]._data.uncompressedSize,
+                  type: filename.split('.').pop().toLowerCase()
+                });
+              }
+            } else {
+              fileList.push({
+                name: filename,
+                size: zipData.files[filename]._data.uncompressedSize,
+                type: filename.split('.').pop().toLowerCase()
+              });
+            }
           }
         }
         
-        setZipContents(fileList.slice(0, 10)); // Show only first 10 files to avoid overwhelming the UI
+        setZipContents(fileList.slice(0, 15)); // Show up to 15 files in preview
+        setProcessingStage('');
       } catch (err) {
         console.error('Error reading ZIP file:', err);
+        setProcessingStage('');
+        setError('Could not read the ZIP file. It may be corrupted.');
       }
     }
   };
@@ -283,14 +330,14 @@ const ScormUploader = () => {
       } : null;
       
       // Simulate upload progress
-      setProcessingStage('Finalizing upload...');
+      setProcessingStage('Uploading to server...');
       let progress = 0;
       const progressInterval = setInterval(() => {
         progress += 5;
         setUploadProgress(Math.min(progress, 100));
         if (progress >= 100) {
           clearInterval(progressInterval);
-          savePackageToLocalStorage(filesMetadata, manifestPath, manifestDir, nestedZipInfo);
+          uploadPackageToServer(filesMetadata, manifestPath, manifestDir, nestedZipInfo);
         }
       }, 100);
       
@@ -298,6 +345,51 @@ const ScormUploader = () => {
       setError('Failed to upload SCORM package. Please try again.');
       console.error('Error uploading package:', err);
       setLoading(false);
+    }
+  };
+  
+  const uploadPackageToServer = async (filesMetadata, manifestPath, manifestDir, nestedZipInfo) => {
+    try {
+      setProcessingStage('Preparing for upload...');
+      
+      // Create a FormData object for the file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', title);
+      formData.append('description', description);
+      formData.append('manifestPath', manifestPath || '');
+      formData.append('manifestDir', manifestDir || '');
+      
+      // Add metadata about the package
+      const packageMetadata = {
+        fileCount: filesMetadata.length,
+        nestedZipInfo: nestedZipInfo,
+        fileStructure: getFileStructure(filesMetadata)
+      };
+      formData.append('metadata', JSON.stringify(packageMetadata));
+      
+      try {
+        setProcessingStage('Uploading to server...');
+        // Try to upload to the server
+        const uploadedPackage = await scormApi.uploadPackage(formData);
+        console.log('Package uploaded successfully:', uploadedPackage);
+        
+        // Complete loading state and navigate to course list
+        setTimeout(() => {
+          setLoading(false);
+          setProcessingStage('');
+          navigate('/');
+        }, 500);
+      } catch (apiError) {
+        console.warn('API upload failed, falling back to localStorage:', apiError);
+        // Fall back to localStorage if API call fails
+        savePackageToLocalStorage(filesMetadata, manifestPath, manifestDir, nestedZipInfo);
+      }
+    } catch (err) {
+      setError('Failed to upload package. Please try again.');
+      console.error('Error during upload:', err);
+      setLoading(false);
+      setProcessingStage('');
     }
   };
   
@@ -309,7 +401,16 @@ const ScormUploader = () => {
       let existingPackages = [];
       
       if (existingPackagesJSON) {
-        existingPackages = JSON.parse(existingPackagesJSON);
+        try {
+          existingPackages = JSON.parse(existingPackagesJSON);
+          if (!Array.isArray(existingPackages)) {
+            console.warn('Stored packages is not an array, resetting');
+            existingPackages = [];
+          }
+        } catch (err) {
+          console.error('Error parsing stored packages, resetting:', err);
+          existingPackages = [];
+        }
       }
       
       // Find the main HTML file, prioritizing files in the manifest directory
@@ -351,9 +452,60 @@ const ScormUploader = () => {
         }
       }
       
+      // Ensure we have at least one file with content
+      let hasHtmlContent = false;
+      for (const file of filesMetadata) {
+        if (file.content && (file.type === 'html' || file.name.endsWith('.html') || file.name.endsWith('.htm'))) {
+          hasHtmlContent = true;
+          break;
+        }
+      }
+      
+      // If no HTML content, add a default page
+      if (!hasHtmlContent) {
+        const defaultHtml = {
+          name: mainFile || 'index.html',
+          type: 'html',
+          size: 1024,
+          content: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>${title}</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+                h1 { color: #2563eb; }
+                h2 { color: #4b5563; margin-top: 30px; }
+                p { margin-bottom: 16px; }
+                .section { margin-bottom: 40px; }
+              </style>
+            </head>
+            <body>
+              <h1>${title}</h1>
+              <div class="section">
+                <h2>Course Description</h2>
+                <p>${description || 'No description provided.'}</p>
+              </div>
+              <div class="section">
+                <h2>Course Content</h2>
+                <p>This is a placeholder page for your course content.</p>
+              </div>
+            </body>
+            </html>
+          `,
+          inManifestDir: true
+        };
+        
+        filesMetadata.push(defaultHtml);
+        mainFile = defaultHtml.name;
+      }
+      
+      // Create a unique ID that works consistently
+      const simpleId = `course-${Date.now()}`;
+      
       // Create new package object
       const newPackage = {
-        _id: Date.now().toString(), // Use timestamp as ID
+        _id: simpleId,
         title,
         description,
         uploadDate: new Date().toISOString(),
@@ -365,7 +517,10 @@ const ScormUploader = () => {
         manifestPath: manifestPath,
         manifestDir: manifestDir,
         fileStructure: getFileStructure(filesMetadata),
-        nestedZipInfo: nestedZipInfo
+        nestedZipInfo: nestedZipInfo,
+        progress: 0,
+        instructor: 'You',
+        duration: '1h 30min'
       };
       
       // Add to packages array
@@ -378,7 +533,7 @@ const ScormUploader = () => {
       setTimeout(() => {
         setLoading(false);
         setProcessingStage('');
-        navigate('/');
+        navigate('/player/' + simpleId); // Navigate directly to the new course
       }, 500);
       
     } catch (err) {
@@ -414,137 +569,367 @@ const ScormUploader = () => {
     return structure;
   };
 
+  const handleCreate = () => {
+    // Handle course creation
+    console.log('Creating course:', title, modules);
+    navigate('/');
+  };
+
+  const handleCancel = () => {
+    navigate('/');
+  };
+  
+  const handleAddItem = (moduleId, type) => {
+    const updatedModules = modules.map(mod => {
+      if (mod.id === moduleId) {
+        return {
+          ...mod,
+          items: [
+            ...mod.items,
+            { 
+              id: Date.now(), 
+              type, 
+              title: type.charAt(0).toUpperCase() + type.slice(1) 
+            }
+          ]
+        };
+      }
+      return mod;
+    });
+    
+    setModules(updatedModules);
+  };
+  
+  const handleAddModule = () => {
+    const newModule = {
+      id: Date.now(),
+      title: `MODULE ${modules.length + 1}`,
+      items: []
+    };
+    
+    setModules([...modules, newModule]);
+  };
+
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h2 className="page-title">Upload SCORM Package</h2>
-          <p className="page-subtitle">Upload a SCORM package (.zip) to make it available in your learning platform</p>
-        </div>
-      </div>
-      
-      <div className="card">
-        {error && <div className="alert alert-danger">{error}</div>}
-        
-        <form onSubmit={handleSubmit}>
-          <div 
-            className={`file-drop-area ${isDragging ? 'dragging' : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <div className="file-drop-icon">
-              {file ? '📄' : '📁'}
-            </div>
-            <div className="file-drop-content">
-              {file ? (
-                <div className="selected-file">
-                  <p className="file-name">{file.name}</p>
-                  <p className="file-size">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-                </div>
-              ) : (
-                <>
-                  <p className="drop-title">Drag & Drop your SCORM package here</p>
-                  <p className="drop-subtitle">or</p>
-                </>
-              )}
-              <input 
-                type="file" 
-                id="file" 
-                className="file-input" 
-                accept=".zip"
-                onChange={handleFileChange}
-                disabled={loading}
-              />
-              <label htmlFor="file" className="btn btn-secondary file-input-label">
-                {file ? 'Change File' : 'Browse Files'}
-              </label>
-            </div>
+    <div className="course-creator">
+      <div className="creator-container">
+        <div className="creator-header">
+          <h1>Create Course</h1>
+          <div className="header-actions">
+            <button className="action-button secondary">
+              <span>Trace as a Core</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 12H20M20 12L14 6M20 12L14 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
           </div>
-          
-          {zipContents.length > 0 && (
-            <div className="zip-preview">
-              <h3>ZIP Content Preview</h3>
-              <div className="file-list">
-                {zipContents.map((file, index) => (
-                  <div key={index} className="file-item">
-                    <span className="file-icon">
-                      {file.name.endsWith('.zip') ? '📦' : '📄'}
-                    </span>
-                    <span className="file-name">{file.name}</span>
-                    <span className="file-size">{(file.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                ))}
-                {zipContents.length < 10 ? (
-                  <p className="file-count">Showing all {zipContents.length} files</p>
-                ) : (
-                  <p className="file-count">Showing 10 of {zipContents.length} files</p>
-                )}
-              </div>
-            </div>
-          )}
-          
+        </div>
+        
+        <div className="course-form">
           <div className="form-group">
-            <label htmlFor="title" className="form-label">Course Title</label>
+            <label htmlFor="courseTitle">Course Title</label>
             <input 
               type="text" 
-              id="title" 
-              className="form-control" 
+              id="courseTitle"
+              placeholder="Sample course"
               value={title} 
               onChange={(e) => setTitle(e.target.value)}
-              disabled={loading}
-              required
-              placeholder="Enter a title for your course"
             />
           </div>
           
-          <div className="form-group">
-            <label htmlFor="description" className="form-label">Description</label>
-            <textarea 
-              id="description" 
-              className="form-control" 
-              value={description} 
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={loading}
-              rows="3"
-              placeholder="Enter a description (optional)"
-            />
+          <div className="modules-container">
+            {modules.map((mod) => (
+              <div key={mod.id} className="module-block">
+                <div className="module-header">
+                  <h2>{mod.title}</h2>
+                  <div className="module-action">
+                    <span>Organize your content.</span>
+                  </div>
           </div>
           
-          {loading && (
-            <div className="upload-progress">
-              <div className="progress-label">
-                <span>{processingStage || 'Uploading...'}</span>
-                <span>{uploadProgress}%</span>
+                <div className="module-items">
+                  {mod.items.map((item) => (
+                    <div key={item.id} className="module-item">
+                      <div className="item-icon">
+                        {item.type === 'introduction' && (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 12.5C12.8284 12.5 13.5 11.8284 13.5 11C13.5 10.1716 12.8284 9.5 12 9.5C11.1716 9.5 10.5 10.1716 10.5 11C10.5 11.8284 11.1716 12.5 12 12.5Z" fill="currentColor"/>
+                            <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M12 16V14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M12 7.5V9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        {item.type === 'lesson' && (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 6H7C5.89543 6 5 6.89543 5 8V16C5 17.1046 5.89543 18 7 18H17C18.1046 18 19 17.1046 19 16V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M16 3L19 6L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M19 6H14.5C13 6 11.5 7.5 11.5 9V9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        {item.type === 'quiz' && (
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5C15 6.10457 14.1046 7 13 7H11C9.89543 7 9 6.10457 9 5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                      <div className="item-title">{item.title}</div>
+                      <button className="item-expand-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M9 5L16 12L9 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  
+                  <button 
+                    className="add-item-btn"
+                    onClick={() => handleAddItem(mod.id, 'lesson')}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 6V18M6 12H18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <span>Add Item</span>
+                  </button>
               </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-bar-fill" 
-                  style={{ width: `${uploadProgress}%` }}
-                ></div>
               </div>
+            ))}
+            
+            <button 
+              className="add-module-btn"
+              onClick={handleAddModule}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 6V18M6 12H18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>Add Module</span>
+            </button>
             </div>
-          )}
           
           <div className="form-actions">
             <button 
-              type="submit" 
-              className="btn btn-primary" 
-              disabled={loading}
-            >
-              {loading ? 'Processing...' : 'Upload SCORM Package'}
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={() => navigate('/')}
-              disabled={loading}
+              className="btn-cancel"
+              onClick={handleCancel}
             >
               Cancel
             </button>
+            <button 
+              className="btn-create"
+              onClick={handleCreate}
+            >
+              Create
+            </button>
           </div>
-        </form>
+        </div>
       </div>
+      
+      <style jsx>{`
+        .course-creator {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        
+        .creator-container {
+          background: white;
+          border-radius: 10px;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          padding: 24px;
+        }
+        
+        .creator-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+        }
+        
+        h1 {
+          font-size: 20px;
+          font-weight: 600;
+          margin: 0;
+          color: #111827;
+        }
+        
+        .action-button {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 10px;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        
+        .action-button.secondary {
+          background: none;
+          border: 1px solid #d1d5db;
+          color: #6b7280;
+        }
+        
+        .course-form {
+          max-width: 700px;
+        }
+        
+        .form-group {
+          margin-bottom: 24px;
+        }
+        
+        label {
+          display: block;
+          font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 8px;
+          color: #4b5563;
+        }
+        
+        input[type="text"] {
+          width: 100%;
+          padding: 10px 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          font-size: 14px;
+          color: #111827;
+        }
+        
+        input[type="text"]::placeholder {
+          color: #9ca3af;
+        }
+        
+        .modules-container {
+          margin-bottom: 24px;
+        }
+        
+        .module-block {
+          margin-bottom: 16px;
+        }
+        
+        .module-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+        
+        h2 {
+          font-size: 14px;
+          font-weight: 600;
+          margin: 0;
+          color: #111827;
+        }
+        
+        .module-action {
+          font-size: 12px;
+          color: #6b7280;
+        }
+        
+        .module-items {
+          border: 1px solid #e5e7eb;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        
+        .module-item {
+          display: flex;
+          align-items: center;
+          padding: 12px 16px;
+          border-bottom: 1px solid #e5e7eb;
+          background-color: white;
+        }
+        
+        .module-item:last-child {
+          border-bottom: none;
+        }
+        
+        .item-icon {
+          margin-right: 12px;
+          color: #6b7280;
+        }
+        
+        .item-title {
+          flex: 1;
+          font-size: 14px;
+          color: #4b5563;
+        }
+        
+        .item-expand-btn {
+          background: none;
+          border: none;
+          color: #9ca3af;
+          cursor: pointer;
+          padding: 4px;
+        }
+        
+        .add-item-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 10px;
+          background-color: #f9fafb;
+          border: none;
+          border-top: 1px solid #e5e7eb;
+          color: #4b5563;
+          font-size: 14px;
+          cursor: pointer;
+        }
+        
+        .add-item-btn:hover {
+          background-color: #f3f4f6;
+        }
+        
+        .add-module-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          padding: 12px;
+          background-color: #f9fafb;
+          border: 1px dashed #d1d5db;
+          border-radius: 6px;
+          color: #4b5563;
+          font-size: 14px;
+          cursor: pointer;
+          margin-top: 20px;
+        }
+        
+        .add-module-btn:hover {
+          background-color: #f3f4f6;
+        }
+        
+        .form-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 24px;
+        }
+        
+        .btn-cancel {
+          padding: 8px 16px;
+          background-color: white;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          color: #6b7280;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        
+        .btn-create {
+          padding: 8px 16px;
+          background-color: #e5e7eb;
+          border: none;
+          border-radius: 6px;
+          color: #111827;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+        }
+      `}</style>
     </div>
   );
 };
