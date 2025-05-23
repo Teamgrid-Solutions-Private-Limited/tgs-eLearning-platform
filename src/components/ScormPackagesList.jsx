@@ -114,7 +114,7 @@ const ScormPackagesList = () => {
           <h2 className="page-title">My SCORM Courses</h2>
           <p className="page-subtitle">Browse and manage your e-learning content</p>
         </div>
-        <Link to="/upload" className="btn btn-primary">
+        <Link to="/authoring-tool/upload" className="btn btn-primary">
           + Upload New Course
         </Link>
       </div>
@@ -124,7 +124,7 @@ const ScormPackagesList = () => {
           <div className="empty-icon">📚</div>
           <h3>No courses yet</h3>
           <p>You haven't uploaded any SCORM packages yet. Upload one to get started!</p>
-          <Link to="/upload" className="btn btn-primary">Upload Your First Course</Link>
+          <Link to="/authoring-tool/upload" className="btn btn-primary">Upload Your First Course</Link>
         </div>
       ) : (
         <div className="grid">
@@ -140,7 +140,7 @@ const ScormPackagesList = () => {
                 </div>
               </div>
               <div className="course-card-footer">
-                <Link to={`/player/${pkg._id}`} className="btn btn-primary">
+                <Link to={`/authoring-tool/player/${pkg._id}`} className="btn btn-primary">
                   Launch Course
                 </Link>
                 <button 

@@ -2,6 +2,90 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
+import LessonEditor from './LessonEditor';
+import { editorDataToHtml } from '../utils/editorjsToHtml';
+import './editor.css';
+import EditorJS from './Editor'
+
+const INITIAL_DATA = {
+  time: new Date().getTime(),
+  blocks: [
+    {
+      type: "header",
+      data: {
+        text: "MERN Stack Tutorial - Getting Started",
+        level: 2
+      }
+    },
+    {
+      type: "paragraph",
+      data: {
+        text: "In this tutorial, you'll learn how to build a full-stack web application using MongoDB, Express, React, and Node.js. Let's begin with the prerequisites and initial setup."
+      }
+    },
+    {
+      type: "checkList",
+      data: {
+        items: [
+          { text: "Install Node.js", checked: true },
+          { text: "Install MongoDB", checked: false },
+          { text: "Install VS Code", checked: true },
+          { text: "Setup project folder", checked: false }
+        ]
+      }
+    },
+    {
+      type: "header",
+      data: {
+        text: "Basic Server Setup",
+        level: 3
+      }
+    },
+    {
+      type: "code",
+      data: {
+        code: `const express = require('express');
+const app = express();
+const PORT = 5000;
+
+app.get('/', (req, res) => {
+  res.send('MERN Tutorial Home');
+});
+
+app.listen(PORT, () => {
+  console.log(\`Server running on http://localhost:\${PORT}\`);
+});`
+      }
+    },
+    {
+      type: "table",
+      data: {
+        withHeadings: true,
+        content: [
+          ["Component", "Technology", "Purpose"],
+          ["M", "MongoDB", "Database"],
+          ["E", "Express.js", "Backend Framework"],
+          ["R", "React.js", "Frontend Library"],
+          ["N", "Node.js", "Runtime Environment"]
+        ]
+      }
+    },
+    {
+      type: "embed",
+      data: {
+        service: "youtube",
+        source: "https://www.youtube.com/watch?v=7CqJlxBYj-M",
+        embed: "https://www.youtube.com/embed/7CqJlxBYj-M",
+        width: 580,
+        height: 320,
+        caption: "Watch: Complete MERN Stack Tutorial"
+      }
+    }
+  ]
+};
+
+
+
 
 const ScormBuilder = () => {
   const navigate = useNavigate();
@@ -11,6 +95,7 @@ const ScormBuilder = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [editorData, setEditorData] = useState(INITIAL_DATA);
 
   const generateManifest = () => {
     return `<?xml version="1.0" standalone="no" ?>
@@ -117,6 +202,9 @@ function setCompleted() {
   };
 
   const generateDefaultHTML = () => {
+    const htmlContent = editorData?.blocks?.length > 0
+    ? editorDataToHtml(editorData)
+    : content 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -163,7 +251,7 @@ function setCompleted() {
   <h1>${title}</h1>
   
   <div class="course-content">
-    ${content || `
+    ${htmlContent || `
     <h2>Course Description</h2>
     <p>${description || 'This is a sample SCORM course generated using the SCORM Builder.'}</p>
     
@@ -257,7 +345,7 @@ function setCompleted() {
           />
         </div>
         
-        <div className="form-group">
+        {/* <div className="form-group">
           <label htmlFor="content" className="form-label">HTML Content (optional)</label>
           <textarea 
             id="content" 
@@ -268,8 +356,14 @@ function setCompleted() {
             rows="10"
             placeholder="Enter your custom HTML content here, or leave blank to use the default template."
           />
+          <LessonEditor data={editorData} onChange={setEditorData} />
           <small className="form-text">Enter custom HTML content for your course, or leave blank to use the default template.</small>
-        </div>
+        </div> */}
+
+        <div className="editor">
+      <EditorJS data={editorData} onChange={setEditorData} editorBlock="editorjs-container" />
+      {/* <button onClick={() => console.log(data)}>Save Data</button> */}
+    </div>
         
         <div className="form-actions">
           <button 
