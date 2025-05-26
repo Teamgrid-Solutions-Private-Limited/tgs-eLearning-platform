@@ -73,11 +73,52 @@ const RecentActivity = () => {
             '&:hover': {
               transform: 'translateY(-2px)',
               boxShadow: '0 4px 12px 0 rgba(0,0,0,0.08)',
+              '& .edit-overlay': {
+                opacity: 1,
+              }
             }
           }}
         >
-          <Box sx={{ height: 120, mb: 2, borderRadius: 2, overflow: 'hidden', background: '#f5f5f5' }}>
+          <Box sx={{ position: 'relative', height: 120, mb: 2, borderRadius: 2, overflow: 'hidden', background: '#f5f5f5' }}>
             <img src={course.image} alt={course.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <Box 
+              className="edit-overlay"
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'rgba(0, 0, 0, 0.4)',
+                opacity: 0,
+                transition: 'opacity 0.2s ease',
+              }}
+            >
+              <Button
+                variant="contained"
+                sx={{
+                  bgcolor: '#fff',
+                  color: '#000',
+                  textTransform: 'none',
+                  boxShadow: 'none',
+                  borderRadius: '20px',
+                  px: 2,
+                  py: 0.5,
+                  width: '120px',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  '&:hover': {
+                    bgcolor: '#f8f8f8',
+                    boxShadow: 'none',
+                  }
+                }}
+              >
+                Edit course
+              </Button>
+            </Box>
           </Box>
           <Typography sx={{ fontWeight: 600, fontSize: 16, mb: 0.5 }}>{course.title}</Typography>
           <Typography sx={{ color: '#888', fontSize: 13, mb: 0.5 }}>Modified: {course.date}</Typography>

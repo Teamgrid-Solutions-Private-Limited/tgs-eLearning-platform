@@ -1,16 +1,24 @@
 import * as React from 'react';
 import { Box, Typography, Button, Avatar, Badge } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const menuItems = [
-  { label: 'Home', active: true },
-  { label: 'Courses' },
-  { label: 'My library' },
-  { label: 'My organization' },
-  { label: 'Learners' }
+  { label: 'Home', path: '/' },
+  { label: 'Courses', path: '/courses' },
+  { label: 'My library', path: '/library' },
+  { label: 'My organization', path: '/organization' },
+  { label: 'Learners', path: '/learners' }
 ];
 
 const Navbar = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleNavigation = (path) => {
+    navigate(path);
+  };
+
   return (
     <Box
       sx={{
@@ -38,7 +46,14 @@ const Navbar = () => {
         }}
       >
         {/* Left section with logo */}
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            cursor: 'pointer',
+          }}
+          onClick={() => handleNavigation('/')}
+        >
           <Box
             sx={{
               width: 45,
@@ -69,23 +84,23 @@ const Navbar = () => {
           {menuItems.map((item) => (
             <Typography
               key={item.label}
+              onClick={() => handleNavigation(item.path)}
               sx={{
                 textAlign: 'center',
-                fontWeight: item.active ? 700 : 500,
-                color: item.active ? '#2193b0' : '#666',
+                fontWeight: location.pathname === item.path ? 700 : 500,
+                color: location.pathname === item.path ? '#2193b0' : '#666',
                 fontSize: '16px',
                 cursor: 'pointer',
                 py: 3,
                 px: 1.5,
                 textDecoration: 'none',
-                borderBottom: item.active ? '2.5px solid #2193b0' : '2.5px solid transparent',
+                borderBottom: location.pathname === item.path ? '2.5px solid #2193b0' : '2.5px solid transparent',
                 borderRadius: '2px',
                 transition: 'all 0.2s',
                 whiteSpace: 'nowrap',
                 minWidth: 'fit-content',
                 '&:hover': {
                   color: '#2193b0',
-                //   background: 'rgba(33, 147, 176, 0.07)',
                 }
               }}
             >
@@ -99,7 +114,7 @@ const Navbar = () => {
           display: 'flex', 
           alignItems: 'center', 
           justifyContent: 'flex-end',
-          gap: 3,
+          gap: 1,
         }}>
           {/* <Typography sx={{ 
             color: '#666', 
@@ -108,7 +123,7 @@ const Navbar = () => {
           }}>
             5 days until trial ends
           </Typography> */}
-          <Button
+          {/* <Button
             variant="outlined"
             size="small"
             sx={{
@@ -135,7 +150,7 @@ const Navbar = () => {
             }}
           >
             Upgrade
-          </Button>
+          </Button> */}
           <Box
             sx={{
               color: '#2193b0',
@@ -143,6 +158,7 @@ const Navbar = () => {
               display: 'flex',
               alignItems: 'center',
               position: 'relative',
+              cursor: 'pointer',
               '&:hover': {
                 backgroundColor: 'rgba(33, 147, 176, 0.07)',
                 borderRadius: '50%',
@@ -179,7 +195,7 @@ const Navbar = () => {
               height: 36,
               bgcolor: '#e3f2fd',
               color: '#2193b0',
-              fontSize: '15px',
+              fontSize: '14px',
               fontWeight: 600,
               cursor: 'pointer',
               ml: 1,
