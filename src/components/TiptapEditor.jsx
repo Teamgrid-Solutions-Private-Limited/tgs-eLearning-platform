@@ -74,6 +74,10 @@ import InsertEmoticonIcon from "@mui/icons-material/InsertEmoticon";
 import InsertPhotoIcon from "@mui/icons-material/InsertPhoto";
 import VideoLibraryIcon from "@mui/icons-material/VideoLibrary";
 
+// Import emoji-mart components
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
+
 // Styled Tooltip for better appearance
 const StyledTooltip = styled(({ className, ...props }) => (
   <Tooltip {...props} classes={{ popper: className }} />
@@ -151,11 +155,13 @@ const tooltipProps = {
 };
 
 // Tiptap custom editor component
-const TiptapEditor = () => {
+const TiptapEditor = ({ initialContent, onUpdate, onBlur }) => {
   const [textColorAnchor, setTextColorAnchor] = useState(null);
   const [highlightColorAnchor, setHighlightColorAnchor] = useState(null);
   const [formatMenuAnchor, setFormatMenuAnchor] = useState(null);
   const [selectedFormat, setSelectedFormat] = useState("Normal");
+  // Add emoji picker state
+  const [emojiPickerAnchor, setEmojiPickerAnchor] = useState(null);
   // Add state for table dialog
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
   const [tableRows, setTableRows] = useState(3);
@@ -198,7 +204,7 @@ const TiptapEditor = () => {
       TableCell,
       HorizontalRule,
     ],
-    content: "<p>Hello World! This is a Tiptap editor.</p>",
+    content: initialContent || "<p>Hello World! This is a Tiptap editor.</p>",
     editorProps: {
       attributes: {
         class: "tiptap-editor",
@@ -207,6 +213,17 @@ const TiptapEditor = () => {
     onUpdate: ({ editor }) => {
       // Update the selected format based on current node
       updateSelectedFormat(editor);
+
+      // Call the onUpdate prop with the HTML content
+      if (onUpdate) {
+        onUpdate(editor.getHTML());
+      }
+    },
+    onBlur: ({ editor }) => {
+      // Call the onBlur prop with the HTML content
+      if (onBlur) {
+        onBlur(editor.getHTML());
+      }
     },
   });
 
@@ -328,6 +345,20 @@ const TiptapEditor = () => {
     editor.chain().focus().setHorizontalRule().run();
   };
 
+  // Add functions for emoji picker
+  const handleEmojiPickerClick = (event) => {
+    setEmojiPickerAnchor(event.currentTarget);
+  };
+
+  const handleEmojiPickerClose = () => {
+    setEmojiPickerAnchor(null);
+  };
+
+  const insertEmoji = (emoji) => {
+    editor.chain().focus().insertContent(emoji.native).run();
+    handleEmojiPickerClose();
+  };
+
   return (
     <Box className="tiptap-editor-wrapper">
       <Paper
@@ -342,6 +373,7 @@ const TiptapEditor = () => {
           border: "1px solid #e0e0e0",
           position: "relative",
           my: 2,
+          px: 1,
         }}
       >
         {/* Toolbar */}
@@ -914,9 +946,7 @@ const TiptapEditor = () => {
           <StyledTooltip title="Insert Emoji" {...tooltipProps}>
             <IconButton
               size="small"
-              onClick={() =>
-                window.alert("Emoji picker functionality to be implemented")
-              }
+              onClick={handleEmojiPickerClick}
               sx={{
                 width: 30,
                 height: 30,
@@ -928,8 +958,49 @@ const TiptapEditor = () => {
             </IconButton>
           </StyledTooltip>
 
+          {/* Emoji Picker Popper */}
+          <Popper
+            open={Boolean(emojiPickerAnchor)}
+            anchorEl={emojiPickerAnchor}
+            placement="bottom-start"
+            transition
+            sx={{
+              width: "18%",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              zIndex: 1300,
+            }}
+          >
+            {({ TransitionProps }) => (
+              <Grow {...TransitionProps} style={{ transformOrigin: "0 0 0" }}>
+                <Paper
+                  elevation={3}
+                  sx={{
+                    mt: 1,
+                    borderRadius: 2,
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <ClickAwayListener onClickAway={handleEmojiPickerClose}>
+                    <div>
+                      <Picker
+                        data={data}
+                        onEmojiSelect={insertEmoji}
+                        theme="light"
+                        previewPosition="none"
+                        skinTonePosition="none"
+                        set="native"
+                      />
+                    </div>
+                  </ClickAwayListener>
+                </Paper>
+              </Grow>
+            )}
+          </Popper>
+
           {/* Image */}
-          <StyledTooltip title="Insert Image" {...tooltipProps}>
+          {/* <StyledTooltip title="Insert Image" {...tooltipProps}>
             <IconButton
               size="small"
               onClick={() =>
@@ -944,10 +1015,10 @@ const TiptapEditor = () => {
             >
               <InsertPhotoIcon sx={{ fontSize: "1.2rem" }} />
             </IconButton>
-          </StyledTooltip>
+          </StyledTooltip> */}
 
           {/* Video */}
-          <StyledTooltip title="Insert Video" {...tooltipProps}>
+          {/* <StyledTooltip title="Insert Video" {...tooltipProps}>
             <IconButton
               size="small"
               onClick={() =>
@@ -962,13 +1033,13 @@ const TiptapEditor = () => {
             >
               <VideoLibraryIcon sx={{ fontSize: "1.2rem" }} />
             </IconButton>
-          </StyledTooltip>
+          </StyledTooltip> */}
         </Box>
 
         <Box
           sx={{
             bgcolor: "#fffef7",
-            minHeight: "200px",
+            minHeight: "120px",
             "& .ProseMirror": {
               padding: "16px",
               outline: "none",
@@ -1097,6 +1168,13 @@ const TiptapEditor = () => {
       </Paper>
     </Box>
   );
+};
+
+// Add prop type defaults
+TiptapEditor.defaultProps = {
+  initialContent: "<p>Hello World! This is a Tiptap editor.</p>",
+  onUpdate: () => {},
+  onBlur: () => {},
 };
 
 export default TiptapEditor;
