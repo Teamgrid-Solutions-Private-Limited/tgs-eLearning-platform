@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import JSZip from 'jszip';
 
-const ScormUploader = () => {
+const ContentUploader = () => {
   const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
@@ -13,6 +13,8 @@ const ScormUploader = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [zipContents, setZipContents] = useState([]);
   const [processingStage, setProcessingStage] = useState('');
+  const [isContentBuilderPackage, setIsContentBuilderPackage] = useState(false);
+  const [detectedModuleCount, setDetectedModuleCount] = useState(0);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -23,6 +25,8 @@ const ScormUploader = () => {
   
   const processFile = async (selectedFile) => {
     setFile(selectedFile);
+    setIsContentBuilderPackage(false);
+    setDetectedModuleCount(0);
     
     // Auto-fill the title if not already set
     if (!title) {
@@ -43,10 +47,40 @@ const ScormUploader = () => {
         // Process each file in the ZIP
         for (const filename in zipData.files) {
           if (!zipData.files[filename].dir) {
+            let content = null;
+            // For HTML files, extract the full content for Content Builder detection
+            if (filename.endsWith('.html') || filename.endsWith('.htm')) {
+              try {
+                content = await zipData.files[filename].async('text');
+              } catch (err) {
+                console.warn('Could not read HTML content for:', filename);
+              }
+            }
+            
             fileList.push({
               name: filename,
-              size: zipData.files[filename]._data.uncompressedSize
+              size: zipData.files[filename]._data.uncompressedSize,
+              content: content
             });
+          }
+        }
+        
+        // Early detection of Content Builder package
+        const isBuilderPackage = detectContentBuilderPackage(fileList);
+        setIsContentBuilderPackage(isBuilderPackage);
+        
+        if (isBuilderPackage) {
+          // Try to extract module count for display
+          const htmlFile = fileList.find(f => f.name === 'index.html' || f.name.endsWith('/index.html'));
+          if (htmlFile && htmlFile.content) {
+            const extractedData = extractBuilderDataFromHTML(htmlFile.content);
+            if (extractedData) {
+              setDetectedModuleCount(extractedData.moduleCount);
+              // Auto-fill title from extracted data if current title is just the filename
+              if (title === selectedFile.name.replace(/\.[^/.]+$/, "") && extractedData.courseData.title) {
+                setTitle(extractedData.courseData.title);
+              }
+            }
           }
         }
         
@@ -80,33 +114,33 @@ const ScormUploader = () => {
     e.preventDefault();
     
     if (!file) {
-      setError('Please select a SCORM package file');
+      setError('Please select a Learning Module file');
       return;
     }
 
     if (!title) {
-      setError('Please enter a title for the SCORM package');
+      setError('Please enter a title for the Learning Module');
       return;
     }
 
     // Check if file is a zip file
     if (!file.name.endsWith('.zip')) {
-      setError('Please upload a zip file for SCORM packages');
+      setError('Please upload a zip file for Learning Modules');
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      setProcessingStage('Reading ZIP file...');
+      setProcessingStage('Analyzing course structure...');
       
       // Read the ZIP file
       const zip = new JSZip();
       const zipData = await zip.loadAsync(file);
       
-      setProcessingStage('Analyzing SCORM structure...');
+      setProcessingStage('Analyzing course structure...');
       
-      // Look for nested zip files that might contain the actual SCORM content
+      // Look for nested zip files that might contain the actual course content
       let nestedZipFiles = [];
       let manifestPath = null;
       let manifestDir = '';
@@ -181,7 +215,7 @@ const ScormUploader = () => {
             }
             
             if (nestedManifestPath) {
-              setProcessingStage(`Found SCORM manifest in nested ZIP: ${nestedZipFile}`);
+              setProcessingStage(`Found course manifest in nested ZIP: ${nestedZipFile}`);
               manifestPath = nestedManifestPath;
               manifestDir = nestedManifestDir;
               
@@ -214,7 +248,7 @@ const ScormUploader = () => {
                 }
               }
               extractedNestedContent = true;
-              break; // Found a valid SCORM package in a nested ZIP, no need to check others
+              break; // Found a valid Learning Module in a nested ZIP, no need to check others
             }
           } catch (err) {
             console.error(`Error extracting nested zip ${nestedZipFile}:`, err);
@@ -223,7 +257,7 @@ const ScormUploader = () => {
         }
         
         if (!extractedNestedContent) {
-          console.warn('No valid SCORM manifest found in any nested ZIP files');
+          console.warn('No valid course manifest found in any nested ZIP files');
         }
       }
       
@@ -268,7 +302,7 @@ const ScormUploader = () => {
       }
       
       if (!manifestPath) {
-        console.warn('Warning: This ZIP may not be a valid SCORM package (no imsmanifest.xml found)');
+        console.warn('Warning: This ZIP may not be a valid Learning Module (no imsmanifest.xml found)');
         // We'll still continue for demo purposes
       } else {
         console.log(`Found manifest at: ${manifestPath}, base directory: ${manifestDir || 'root'}`);
@@ -295,7 +329,7 @@ const ScormUploader = () => {
       }, 100);
       
     } catch (err) {
-      setError('Failed to upload SCORM package. Please try again.');
+      setError('Failed to upload Learning Module. Please try again.');
       console.error('Error uploading package:', err);
       setLoading(false);
     }
@@ -305,11 +339,28 @@ const ScormUploader = () => {
     try {
       setProcessingStage('Saving to local storage...');
       // Get existing packages
-      const existingPackagesJSON = localStorage.getItem('scormPackages');
+      const existingPackagesJSON = localStorage.getItem('learningModules');
       let existingPackages = [];
       
       if (existingPackagesJSON) {
         existingPackages = JSON.parse(existingPackagesJSON);
+      }
+      
+      // Detect if this is a Content Builder package
+      const isContentBuilderPackage = detectContentBuilderPackage(filesMetadata);
+      let builderData = null;
+      let moduleCount = 0;
+      
+      if (isContentBuilderPackage) {
+        // Try to extract builder data from the HTML content
+        const htmlFile = filesMetadata.find(f => f.name === 'index.html' || f.name.endsWith('/index.html'));
+        if (htmlFile && htmlFile.content) {
+          const extractedData = extractBuilderDataFromHTML(htmlFile.content);
+          if (extractedData) {
+            builderData = extractedData.courseData;
+            moduleCount = extractedData.moduleCount;
+          }
+        }
       }
       
       // Find the main HTML file, prioritizing files in the manifest directory
@@ -365,14 +416,20 @@ const ScormUploader = () => {
         manifestPath: manifestPath,
         manifestDir: manifestDir,
         fileStructure: getFileStructure(filesMetadata),
-        nestedZipInfo: nestedZipInfo
+        nestedZipInfo: nestedZipInfo,
+        // Content Builder specific properties
+        ...(isContentBuilderPackage && {
+          isBuiltWithBuilder: true,
+          builderData: builderData,
+          moduleCount: moduleCount
+        })
       };
       
       // Add to packages array
       existingPackages.push(newPackage);
       
       // Save back to localStorage
-      localStorage.setItem('scormPackages', JSON.stringify(existingPackages));
+      localStorage.setItem('learningModules', JSON.stringify(existingPackages));
       
       // Complete loading state
       setTimeout(() => {
@@ -389,6 +446,121 @@ const ScormUploader = () => {
     }
   };
   
+  // Detect if this is a Content Builder package
+  const detectContentBuilderPackage = (filesMetadata) => {
+    // Content Builder packages have a specific structure:
+    // - index.html (main file)
+    // - styles.css
+    // - course.js
+    // - course_api.js
+    // - imsmanifest.xml
+    // - Media files with pattern media_*.ext
+    
+    const requiredFiles = ['index.html', 'styles.css', 'course.js', 'course_api.js', 'imsmanifest.xml'];
+    const foundFiles = requiredFiles.filter(fileName => 
+      filesMetadata.some(f => f.name === fileName || f.name.endsWith(`/${fileName}`))
+    );
+    
+    // Check if we have most of the required files (at least 4 out of 5)
+    const hasRequiredFiles = foundFiles.length >= 4;
+    
+    // Check for media files with Content Builder naming pattern
+    const hasMediaFiles = filesMetadata.some(f => 
+      /^media_\d+\.(jpg|jpeg|png|gif|mp4|webm|mp3|wav|ogg)$/i.test(f.name) ||
+      f.name.includes('/media_')
+    );
+    
+    // Check if the HTML content contains Content Builder specific elements
+    const htmlFile = filesMetadata.find(f => f.name === 'index.html' || f.name.endsWith('/index.html'));
+    let hasBuilderStructure = false;
+    
+    if (htmlFile && htmlFile.content) {
+      // Look for Content Builder specific HTML structure
+      hasBuilderStructure = htmlFile.content.includes('course-container') &&
+                           htmlFile.content.includes('course-navigation') &&
+                           htmlFile.content.includes('module-content') &&
+                           htmlFile.content.includes('data-module-id');
+    }
+    
+    console.log('Content Builder detection:', {
+      hasRequiredFiles,
+      foundFiles: foundFiles.length,
+      hasMediaFiles,
+      hasBuilderStructure
+    });
+    
+    // Consider it a Content Builder package if it has the required files and either media files or builder structure
+    return hasRequiredFiles && (hasMediaFiles || hasBuilderStructure);
+  };
+  
+  // Extract builder data from HTML content
+  const extractBuilderDataFromHTML = (htmlContent) => {
+    try {
+      // Try to extract module information from the HTML
+      const moduleMatches = htmlContent.match(/data-module-id="([^"]+)"/g);
+      const moduleCount = moduleMatches ? moduleMatches.length : 0;
+      
+      // Try to extract course title
+      const titleMatch = htmlContent.match(/<title>([^<]+)<\/title>/);
+      const courseTitle = titleMatch ? titleMatch[1] : '';
+      
+      // Try to extract course header
+      const headerMatch = htmlContent.match(/<h1>([^<]+)<\/h1>/);
+      const headerTitle = headerMatch ? headerMatch[1] : '';
+      
+      // Create a simplified course data structure
+      const courseData = {
+        title: courseTitle || headerTitle || 'Imported Course',
+        description: 'Course imported from Learning Module',
+        modules: [],
+        settings: {
+          theme: 'modern',
+          navigation: 'sidebar',
+          responsive: true,
+          accessibility: true
+        }
+      };
+      
+      // Try to extract module information
+      if (moduleMatches) {
+        moduleMatches.forEach((match, index) => {
+          const moduleId = match.match(/data-module-id="([^"]+)"/)[1];
+          
+          // Try to find module title in the HTML
+          const modulePattern = new RegExp(`<section[^>]*data-module-id="${moduleId}"[^>]*>([\\s\\S]*?)<\\/section>`);
+          const moduleMatch = htmlContent.match(modulePattern);
+          
+          let moduleTitle = `Module ${index + 1}`;
+          if (moduleMatch) {
+            const titleMatch = moduleMatch[1].match(/<h2>([^<]+)<\/h2>/);
+            if (titleMatch) {
+              moduleTitle = titleMatch[1];
+            }
+          }
+          
+          courseData.modules.push({
+            id: moduleId,
+            title: moduleTitle,
+            description: '',
+            elements: [],
+            settings: {
+              navigation: true,
+              completion: 'manual'
+            }
+          });
+        });
+      }
+      
+      return {
+        courseData,
+        moduleCount
+      };
+    } catch (error) {
+      console.error('Error extracting builder data from HTML:', error);
+      return null;
+    }
+  };
+
   // Create a file structure representation for better navigation
   const getFileStructure = (files) => {
     const structure = {};
@@ -418,8 +590,8 @@ const ScormUploader = () => {
     <div>
       <div className="page-header">
         <div>
-          <h2 className="page-title">Upload SCORM Package</h2>
-          <p className="page-subtitle">Upload a SCORM package (.zip) to make it available in your learning platform</p>
+          <h2 className="page-title">Upload Learning Module</h2>
+          <p className="page-subtitle">Upload a Learning Module (.zip) to make it available in your learning platform</p>
         </div>
       </div>
       
@@ -444,7 +616,7 @@ const ScormUploader = () => {
                 </div>
               ) : (
                 <>
-                  <p className="drop-title">Drag & Drop your SCORM package here</p>
+                  <p className="drop-title">Drag & Drop your Learning Module here</p>
                   <p className="drop-subtitle">or</p>
                 </>
               )}
@@ -461,6 +633,24 @@ const ScormUploader = () => {
               </label>
             </div>
           </div>
+          
+          {isContentBuilderPackage && (
+            <div className="content-builder-detection">
+              <div className="detection-badge">
+                <span className="badge-icon">🎯</span>
+                <div className="badge-content">
+                  <h4>Content Builder Package Detected!</h4>
+                  <p>This appears to be a Learning Module created with our Content Builder.</p>
+                  {detectedModuleCount > 0 && (
+                    <p><strong>Modules detected:</strong> {detectedModuleCount}</p>
+                  )}
+                  <p className="detection-note">
+                    ✅ The module will be properly recognized and displayed with Content Builder features.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {zipContents.length > 0 && (
             <div className="zip-preview">
@@ -532,7 +722,7 @@ const ScormUploader = () => {
               className="btn btn-primary" 
               disabled={loading}
             >
-              {loading ? 'Processing...' : 'Upload SCORM Package'}
+              {loading ? 'Processing...' : 'Upload Learning Module'}
             </button>
             <button 
               type="button" 
@@ -549,4 +739,4 @@ const ScormUploader = () => {
   );
 };
 
-export default ScormUploader; 
+export default ContentUploader; 

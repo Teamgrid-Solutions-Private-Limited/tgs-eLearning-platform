@@ -42,6 +42,7 @@ body {
   width: 100%;
   max-width: 100%;
   padding: 0 1rem;
+  gap: 1rem;
 }
 
 .app-header {
@@ -92,6 +93,8 @@ body {
   display: flex;
   list-style: none;
   gap: 2rem;
+  margin: 0;
+  padding: 0;
 }
 
 .nav-menu a {
@@ -324,15 +327,15 @@ body {
   gap: 0.75rem;
 }
 
-/* SCORM Player Styles */
-.scorm-player {
+/* Course Player Styles */
+.course-player {
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
 }
 
-.scorm-content-wrapper {
+.course-content-wrapper {
   padding: 2rem;
   border-radius: 0.75rem;
   background-color: white;
@@ -662,8 +665,8 @@ body {
   text-align: right;
 }
 
-/* SCORM content tabs */
-.scorm-content-tabs {
+/* Course content tabs */
+.course-content-tabs {
   margin-bottom: 2rem;
 }
 
@@ -915,15 +918,28 @@ video.media-content {
 }
 
 .media-badge {
-  display: inline-block;
-  margin-left: 10px;
-  background-color: #3b82f6;
+  background: #17a2b8;
   color: white;
-  font-size: 0.7rem;
-  padding: 3px 8px;
+  padding: 0.25rem 0.5rem;
   border-radius: 12px;
-  vertical-align: middle;
-  font-weight: normal;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.builder-badge {
+  background: #28a745;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.module-count {
+  color: #28a745;
+  font-weight: 500;
 }
 
 .media-count {
@@ -1022,5 +1038,172 @@ video.media-content {
 }
 
 .media-error li {
-  margin-bottom: 5px;
+  margin-bottom: 0.5rem;
+}
+
+/* Content Builder Detection Styles */
+.content-builder-detection {
+  margin: 1.5rem 0;
+}
+
+.detection-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  border: 2px solid #2196f3;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+}
+
+.badge-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  margin-top: 0.25rem;
+}
+
+.badge-content {
+  flex: 1;
+}
+
+.badge-content h4 {
+  margin: 0 0 0.5rem 0;
+  color: #1565c0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.badge-content p {
+  margin: 0 0 0.5rem 0;
+  color: #424242;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.badge-content p:last-child {
+  margin-bottom: 0;
+}
+
+.detection-note {
+  background: rgba(76, 175, 80, 0.1);
+  border-left: 4px solid #4caf50;
+  padding: 0.75rem 1rem;
+  border-radius: 0 6px 6px 0;
+  font-weight: 500;
+  color: #2e7d32 !important;
+  margin-top: 1rem !important;
+}
+
+/* Responsive design for detection badge */
+@media (max-width: 768px) {
+  .detection-badge {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+  }
+  
+  .badge-icon {
+    align-self: center;
+    margin-top: 0;
+  }
+}
+
+/* App loading state */
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.app-loading .loading-spinner {
+  text-align: center;
+}
+
+.app-loading .spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(102, 126, 234, 0.2);
+  border-left-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+.app-loading p {
+  color: #64748b;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+/* No header layout */
+.app-content.no-header {
+  padding: 0;
+}
+
+/* Updated footer styles */
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.footer-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.footer-info span {
+  font-size: 0.875rem;
+}
+
+.org-info {
+  color: #9ca3af;
+  font-size: 0.75rem !important;
+}
+
+/* Navigation adjustments */
+.nav-menu {
+  display: flex;
+  list-style: none;
+  gap: 2rem;
+  margin: 0;
+  padding: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .footer-content {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+  
+  .footer-info {
+    align-items: center;
+  }
+  
+  .header-content {
+    gap: 0.5rem;
+  }
+  
+  .nav-menu {
+    gap: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-loading .spinner {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .app-loading p {
+    font-size: 1rem;
+  }
 }
