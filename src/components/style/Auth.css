@@ -12,8 +12,44 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
   z-index: 0;
+  overflow: hidden;
+}
+
+.auth-background::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 255, 255, 0.1) 0%,
+    transparent 60%
+  );
+  animation: rotate 30s linear infinite;
+}
+
+.auth-background::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%23ffffff' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
+  opacity: 0.5;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .auth-pattern {
@@ -22,16 +58,27 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-image: 
-    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 2px, transparent 2px),
-    radial-gradient(circle at 75% 75%, rgba(255,255,255,0.1) 2px, transparent 2px);
+  background-image: radial-gradient(
+      circle at 25% 25%,
+      rgba(255, 255, 255, 0.1) 2px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 75% 75%,
+      rgba(255, 255, 255, 0.1) 2px,
+      transparent 2px
+    );
   background-size: 60px 60px;
   animation: patternMove 20s linear infinite;
 }
 
 @keyframes patternMove {
-  0% { transform: translate(0, 0); }
-  100% { transform: translate(60px, 60px); }
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(60px, 60px);
+  }
 }
 
 .auth-content {
@@ -191,7 +238,7 @@
 }
 
 .checkbox-label input[type="checkbox"]:checked + .checkmark::after {
-  content: '✓';
+  content: "✓";
   color: white;
   font-size: 12px;
   font-weight: bold;
@@ -250,8 +297,12 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .auth-footer {
@@ -380,17 +431,17 @@
   .auth-content {
     flex-direction: column;
   }
-  
+
   .auth-card {
     max-width: none;
     padding: 2rem;
   }
-  
+
   .auth-features {
     padding: 2rem;
     max-width: none;
   }
-  
+
   .features-grid {
     grid-template-columns: 1fr 1fr;
     gap: 1.5rem;
@@ -401,25 +452,25 @@
   .auth-card {
     padding: 1.5rem;
   }
-  
+
   .auth-header h2 {
     font-size: 1.75rem;
   }
-  
+
   .form-row {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-  
+
   .features-grid {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-  
+
   .feature-item {
     padding: 1rem;
   }
-  
+
   .auth-features h3 {
     font-size: 1.5rem;
   }
@@ -429,25 +480,25 @@
   .auth-card {
     padding: 1rem;
   }
-  
+
   .auth-logo {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .auth-logo h1 {
     font-size: 1.5rem;
   }
-  
+
   .auth-header h2 {
     font-size: 1.5rem;
   }
-  
+
   .form-group input,
   .form-group select {
     padding: 0.75rem;
   }
-  
+
   .auth-submit-btn {
     padding: 0.875rem 1.5rem;
   }
@@ -483,12 +534,12 @@
   .auth-card {
     border: 2px solid #000;
   }
-  
+
   .form-group input,
   .form-group select {
     border-width: 2px;
   }
-  
+
   .checkmark {
     border-width: 2px;
   }
@@ -499,15 +550,15 @@
   .auth-pattern {
     animation: none;
   }
-  
+
   .feature-item:hover {
     transform: none;
   }
-  
+
   .auth-submit-btn:hover:not(:disabled) {
     transform: none;
   }
-  
+
   .auth-form {
     animation: none;
   }
@@ -515,10 +566,8 @@
 
 /* Demo accounts section */
 .demo-accounts {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid #e5e7eb;
-  text-align: center;
+  margin-top: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .demo-title {
@@ -564,8 +613,40 @@
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .demo-btn {
     width: 100%;
   }
-} 
+}
+
+.demo-credentials-info {
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.demo-credentials-info p {
+  margin: 0.25rem 0;
+  color: #334155;
+}
+
+.demo-credentials-info p:first-child {
+  color: #1e293b;
+}
+
+/* Add the following styles at the end of the file */
+.rate-limit-info {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #777;
+  background-color: rgba(255, 255, 255, 0.5);
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.rate-limit-info p {
+  margin: 0;
+}

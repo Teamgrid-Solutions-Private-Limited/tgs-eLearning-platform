@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import './ContentBuilder.css';
+import './style/ContentBuilder.css';
 
 const TemplateLibrary = ({ onSelectTemplate, onClose }) => {
   const [activeCategory, setActiveCategory] = useState('courses');

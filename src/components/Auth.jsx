@@ -1,267 +1,593 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import './Auth.css';
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
+import {
+  login,
+  register,
+  reset as resetAuth,
+  getRoles,
+  getOrganizations,
+  setError as setAuthError,
+  clearError as clearAuthError,
+} from "../store/slices/authSlice";
+import {
+  createOrganization,
+  reset as resetOrg,
+  setCurrentOrganization,
+} from "../store/slices/orgSlice";
 
-const Auth = ({ onAuthSuccess }) => {
+import { logEnvironmentInfo } from "../utils/env";
+import "./style/Auth.css";
+
+const Auth = () => {
+  // Log environment info for debugging
+  useEffect(() => {
+    logEnvironmentInfo();
+  }, []);
+
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useDispatch();
+
+  const {
+    user,
+    isLoading: authLoading,
+    isSuccess,
+    isError: authError,
+    errorMessage: authErrorMessage,
+    roles,
+    organizations,
+    isAuthenticated,
+  } = useSelector((state) => state.auth);
+
+  const {
+    isLoading: orgLoading,
+    isError: orgError,
+    errorMessage: orgErrorMessage,
+    isRateLimited,
+    retryAfter,
+  } = useSelector((state) => state.org);
+
+  const isLoading = authLoading || orgLoading;
+  const isError = authError || orgError;
+  const errorMessage = authErrorMessage || orgErrorMessage;
+
   const [isLogin, setIsLogin] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  
+  const [showOrgSetup, setShowOrgSetup] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [createdOrgId, setCreatedOrgId] = useState("");
+  const [createdOrgName, setCreatedOrgName] = useState("");
+  console.log("Roles:", roles);
+
   // Form data
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    firstName: '',
-    lastName: '',
-    organizationName: '',
-    organizationType: 'education',
-    role: 'admin',
-    phone: '',
-    agreeToTerms: false
+    email: "",
+    password: "",
+    confirmPassword: "",
+    firstName: "",
+    lastName: "",
+    role: "",
+    termsAccepted: false,
+    privacyPolicyAccepted: false,
   });
 
-  // Check if user is already logged in
+  // Organization form data
+  const [orgFormData, setOrgFormData] = useState({
+    name: "",
+    description: "",
+    website: "",
+    email: "",
+    phone: "",
+    address: {
+      street: "",
+      city: "",
+      state: "",
+      country: "",
+      zipCode: "",
+    },
+  });
+
+  // Fetch roles on component mount
   useEffect(() => {
-    const currentUser = localStorage.getItem('currentUser');
-    if (currentUser) {
-      const user = JSON.parse(currentUser);
-      onAuthSuccess(user);
-      navigate('/');
+    // In development, use mock roles instead of API call
+    if (process.env.NODE_ENV === "development") {
+      const mockRoles = [
+        { _id: "admin", name: "Administrator" },
+        { _id: "instructor", name: "Instructor" },
+      ];
+      dispatch({ type: "auth/getRoles/fulfilled", payload: mockRoles });
+    } else {
+      dispatch(getRoles());
+    }
+  }, [dispatch]);
+
+  // Reset success/error states when component unmounts
+  useEffect(() => {
+    dispatch(getRoles());
+    return () => {
+      dispatch(resetAuth());
+      dispatch(resetOrg());
+    };
+  }, [dispatch]);
+
+  // Redirect if authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const redirectTo = location.state?.from?.pathname || "/";
+      navigate(redirectTo);
+    }
+  }, [isAuthenticated, user, navigate, location]);
+
+  // Check if login/register was successful
+  useEffect(() => {
+    if (isSuccess) {
+      setSuccess(
+        isLogin
+          ? "Login successful! Redirecting..."
+          : "Account created successfully! Redirecting..."
+      );
+
+      // Reset form data
+      setFormData({
+        email: "",
+        password: "",
+        confirmPassword: "",
+        firstName: "",
+        lastName: "",
+        role: "",
+        termsAccepted: false,
+        privacyPolicyAccepted: false,
+      });
+
+      // Clear success message after delay
+      const timer = setTimeout(() => {
+        dispatch(resetAuth());
+        setSuccess("");
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess, isLogin, dispatch]);
+
+  // Fetch organizations
+  // useEffect(() => {
+  //   dispatch(getOrganizations());
+  // }, [dispatch]);
+
+  const handleOrgInputChange = (e) => {
+    const { name, value } = e.target;
+    if (name.includes(".")) {
+      const [parent, child] = name.split(".");
+      setOrgFormData((prev) => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: value,
+        },
+      }));
+    } else {
+      setOrgFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
+  };
+
+  const handleOrgSubmit = async (e) => {
+    e.preventDefault();
+    console.log("Submitting organization form:", orgFormData);
+
+    // Check if rate limited
+    if (isRateLimited) {
+      dispatch(
+        setAuthError(
+          `Rate limit exceeded. Please try again in ${retryAfter} seconds.`
+        )
+      );
+      return;
     }
 
-    // Initialize demo users if none exist
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    if (users.length === 0) {
-      const demoUsers = [
-        {
-          id: 'demo1',
-          email: 'admin@demo.com',
-          password: 'demo123',
-          firstName: 'John',
-          lastName: 'Admin',
-          organizationName: 'Demo University',
-          organizationType: 'education',
-          role: 'admin',
-          phone: '+1-555-0123',
-          createdAt: new Date().toISOString(),
-          isActive: true
-        },
-        {
-          id: 'demo2',
-          email: 'instructor@demo.com',
-          password: 'demo123',
-          firstName: 'Sarah',
-          lastName: 'Johnson',
-          organizationName: 'Tech Corp Learning',
-          organizationType: 'corporate',
-          role: 'instructor',
-          phone: '+1-555-0124',
-          createdAt: new Date().toISOString(),
-          isActive: true
-        }
-      ];
-      localStorage.setItem('users', JSON.stringify(demoUsers));
+    // Validate organization data
+    const errors = {};
+
+    // Required fields
+    if (!orgFormData.name) {
+      errors.name = "Organization name is required";
+    } else if (orgFormData.name.length > 100) {
+      errors.name = "Organization name cannot be more than 100 characters";
     }
-  }, [navigate, onAuthSuccess]);
+
+    if (orgFormData.description && orgFormData.description.length > 500) {
+      errors.description = "Description cannot be more than 500 characters";
+    }
+
+    if (
+      orgFormData.website &&
+      !/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/.test(
+        orgFormData.website
+      )
+    ) {
+      errors.website = "Please provide a valid website URL";
+    }
+
+    if (orgFormData.email && !/\S+@\S+\.\S+/.test(orgFormData.email)) {
+      errors.email = "Please provide a valid email";
+    }
+
+    if (orgFormData.phone && orgFormData.phone.length > 20) {
+      errors.phone = "Phone number cannot be longer than 20 characters";
+    }
+
+    // Address validation
+    if (orgFormData.address) {
+      if (orgFormData.address.street && !orgFormData.address.street.trim()) {
+        errors.street = "Street address cannot be empty";
+      }
+      if (orgFormData.address.city && !orgFormData.address.city.trim()) {
+        errors.city = "City cannot be empty";
+      }
+      if (orgFormData.address.state && !orgFormData.address.state.trim()) {
+        errors.state = "State cannot be empty";
+      }
+      if (orgFormData.address.country && !orgFormData.address.country.trim()) {
+        errors.country = "Country cannot be empty";
+      }
+      if (orgFormData.address.zipCode && !orgFormData.address.zipCode.trim()) {
+        errors.zipCode = "Zip code cannot be empty";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      dispatch(setAuthError(firstError));
+      return;
+    }
+
+    try {
+      // Create organization using Redux action
+      const resultAction = await dispatch(createOrganization(orgFormData));
+
+      if (createOrganization.fulfilled.match(resultAction)) {
+        const createdOrg = resultAction.payload.data;
+        console.log("Organization created:", createdOrg);
+        localStorage.setItem("orgId", createdOrg._id);
+
+        // Set the created organization as current
+        dispatch(setCurrentOrganization(createdOrg));
+
+        setCreatedOrgId(createdOrg._id);
+        setCreatedOrgName(createdOrg.name);
+        setShowOrgSetup(false);
+        setIsLogin(false);
+        setSuccess("Organization created successfully");
+
+        // Reset organization form data
+        setOrgFormData({
+          name: "",
+          description: "",
+          website: "",
+          email: "",
+          phone: "",
+          address: {
+            street: "",
+            city: "",
+            state: "",
+            country: "",
+            zipCode: "",
+          },
+        });
+      } else {
+        throw new Error(
+          resultAction.payload.message || "Failed to create organization"
+        );
+      }
+    } catch (error) {
+      console.error("Error creating organization:", error);
+      dispatch(
+        setAuthError(
+          error.message || "Failed to create organization. Please try again."
+        )
+      );
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === "checkbox" ? checked : value,
     }));
-    // Clear errors when user starts typing
-    if (error) setError('');
+
+    if (isError) {
+      dispatch(clearAuthError());
+    }
   };
 
   const validateForm = () => {
-    if (!formData.email || !formData.password) {
-      setError('Email and password are required');
-      return false;
-    }
-
-    if (!isLogin) {
-      if (!formData.firstName || !formData.lastName) {
-        setError('First name and last name are required');
-        return false;
-      }
-      
-      if (!formData.organizationName) {
-        setError('Organization name is required');
-        return false;
-      }
-      
-      if (formData.password !== formData.confirmPassword) {
-        setError('Passwords do not match');
-        return false;
-      }
-      
-      if (formData.password.length < 6) {
-        setError('Password must be at least 6 characters long');
-        return false;
-      }
-      
-      if (!formData.agreeToTerms) {
-        setError('You must agree to the terms and conditions');
-        return false;
-      }
-    }
+    const errors = {};
 
     // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
+    if (!formData.email) {
+      errors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = "Email is invalid";
+    }
+
+    // Password validation
+    if (!formData.password) {
+      errors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      errors.password = "Password must be at least 6 characters";
+    }
+
+    // For registration form only
+    if (!isLogin) {
+      // First name validation
+      if (!formData.firstName) {
+        errors.firstName = "First name is required";
+      } else if (formData.firstName.trim().length === 0) {
+        errors.firstName = "First name cannot be empty";
+      } else if (formData.firstName.length > 50) {
+        errors.firstName = "First name cannot be more than 50 characters";
+      }
+
+      // Last name validation
+      if (!formData.lastName) {
+        errors.lastName = "Last name is required";
+      } else if (formData.lastName.trim().length === 0) {
+        errors.lastName = "Last name cannot be empty";
+      } else if (formData.lastName.length > 50) {
+        errors.lastName = "Last name cannot be more than 50 characters";
+      }
+
+      // Confirm password
+      if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = "Passwords do not match";
+      }
+
+      // Role validation
+      if (!formData.role) {
+        errors.role = "Role is required";
+      }
+
+      // Terms agreement
+      if (!formData.termsAccepted) {
+        errors.termsAccepted = "You must agree to the terms";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      dispatch(setAuthError(firstError));
       return false;
     }
 
+    dispatch(clearAuthError());
     return true;
-  };
-
-  const handleLogin = async () => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Get stored users
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    
-    // Find user
-    const user = users.find(u => 
-      u.email === formData.email && u.password === formData.password
-    );
-    
-    if (!user) {
-      throw new Error('Invalid email or password');
-    }
-    
-    // Create session
-    const sessionData = {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      organizationName: user.organizationName,
-      organizationType: user.organizationType,
-      role: user.role,
-      loginTime: new Date().toISOString(),
-      sessionId: Date.now().toString()
-    };
-    
-    localStorage.setItem('currentUser', JSON.stringify(sessionData));
-    return sessionData;
-  };
-
-  const handleSignup = async () => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Get existing users
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    
-    // Check if user already exists
-    if (users.find(u => u.email === formData.email)) {
-      throw new Error('An account with this email already exists');
-    }
-    
-    // Create new user
-    const newUser = {
-      id: Date.now().toString(),
-      email: formData.email,
-      password: formData.password, // In real app, this would be hashed
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      organizationName: formData.organizationName,
-      organizationType: formData.organizationType,
-      role: formData.role,
-      phone: formData.phone,
-      createdAt: new Date().toISOString(),
-      isActive: true
-    };
-    
-    // Save user
-    users.push(newUser);
-    localStorage.setItem('users', JSON.stringify(users));
-    
-    // Create session
-    const sessionData = {
-      id: newUser.id,
-      email: newUser.email,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-      organizationName: newUser.organizationName,
-      organizationType: newUser.organizationType,
-      role: newUser.role,
-      loginTime: new Date().toISOString(),
-      sessionId: Date.now().toString()
-    };
-    
-    localStorage.setItem('currentUser', JSON.stringify(sessionData));
-    return sessionData;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    
-    try {
-      let userData;
-      
-      if (isLogin) {
-        userData = await handleLogin();
-        setSuccess('Login successful! Redirecting...');
-      } else {
-        userData = await handleSignup();
-        setSuccess('Account created successfully! Redirecting...');
+
+    if (isRateLimited) {
+      dispatch(
+        setAuthError(
+          "Please wait before trying again. Our API has rate limits in place."
+        )
+      );
+      return;
+    }
+
+    if (!validateForm()) {
+      return;
+    }
+
+    if (isLogin) {
+      dispatch(
+        login({
+          email: formData.email,
+          password: formData.password,
+        })
+      );
+    } else {
+      if (!createdOrgId) {
+        dispatch(setAuthError("Please create an organization first"));
+        return;
       }
-      
-      // Call the auth success callback
-      onAuthSuccess(userData);
-      
-      // Redirect after success
-      setTimeout(() => {
-        const redirectTo = location.state?.from?.pathname || '/';
-        navigate(redirectTo);
-      }, 1500);
-      
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+
+      const registerData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        organization: createdOrgId,
+        // position: formData.position || "",
+        // department: formData.department || "",
+        termsAccepted: formData.termsAccepted,
+        privacyPolicyAccepted: formData.termsAccepted,
+      };
+      console.log("Register data:", registerData);
+      dispatch(register(registerData));
     }
   };
 
   const toggleMode = () => {
-    setIsLogin(!isLogin);
-    setError('');
-    setSuccess('');
+    console.log("Toggle mode called. Current isLogin:", isLogin);
+    if (isLogin) {
+      // When switching to signup, show organization form first
+      console.log("Switching to signup, showing org form");
+      setShowOrgSetup(true);
+      setIsLogin(false);
+    } else {
+      // When switching to login, reset all states
+      console.log("Switching to login, resetting states");
+      setShowOrgSetup(false);
+      setCreatedOrgId("");
+      setCreatedOrgName("");
+      setIsLogin(true);
+    }
+    dispatch(resetAuth());
+    setSuccess("");
     setFormData({
-      email: '',
-      password: '',
-      confirmPassword: '',
-      firstName: '',
-      lastName: '',
-      organizationName: '',
-      organizationType: 'education',
-      role: 'admin',
-      phone: '',
-      agreeToTerms: false
+      email: "",
+      password: "",
+      confirmPassword: "",
+      firstName: "",
+      lastName: "",
+      role: roles && roles.length > 0 ? roles[0]._id : "",
+      termsAccepted: false,
+      privacyPolicyAccepted: false,
     });
   };
+
+  const renderOrgSetupForm = () => (
+    <form onSubmit={handleOrgSubmit} className="auth-form">
+      <div className="form-group">
+        <label htmlFor="orgName">Organization Name</label>
+        <input
+          type="text"
+          id="orgName"
+          name="name"
+          value={orgFormData.name}
+          onChange={handleOrgInputChange}
+          placeholder="Enter organization name"
+          required
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="orgDescription">Description</label>
+        <textarea
+          id="orgDescription"
+          name="description"
+          value={orgFormData.description}
+          onChange={handleOrgInputChange}
+          placeholder="Enter organization description"
+          required
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="orgWebsite">Website</label>
+        <input
+          type="url"
+          id="orgWebsite"
+          name="website"
+          value={orgFormData.website}
+          onChange={handleOrgInputChange}
+          placeholder="Enter organization website"
+          required
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="orgEmail">Organization Email</label>
+        <input
+          type="email"
+          id="orgEmail"
+          name="email"
+          value={orgFormData.email}
+          onChange={handleOrgInputChange}
+          placeholder="Enter organization email"
+          required
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="orgPhone">Phone</label>
+        <input
+          type="tel"
+          id="orgPhone"
+          name="phone"
+          value={orgFormData.phone}
+          onChange={handleOrgInputChange}
+          placeholder="Enter organization phone"
+          required
+        />
+      </div>
+      <div className="form-group">
+        <label htmlFor="orgStreet">Street Address</label>
+        <input
+          type="text"
+          id="orgStreet"
+          name="address.street"
+          value={orgFormData.address.street}
+          onChange={handleOrgInputChange}
+          placeholder="Enter street address"
+          required
+        />
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="orgCity">City</label>
+          <input
+            type="text"
+            id="orgCity"
+            name="address.city"
+            value={orgFormData.address.city}
+            onChange={handleOrgInputChange}
+            placeholder="Enter city"
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="orgState">State</label>
+          <input
+            type="text"
+            id="orgState"
+            name="address.state"
+            value={orgFormData.address.state}
+            onChange={handleOrgInputChange}
+            placeholder="Enter state"
+            required
+          />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="orgCountry">Country</label>
+          <input
+            type="text"
+            id="orgCountry"
+            name="address.country"
+            value={orgFormData.address.country}
+            onChange={handleOrgInputChange}
+            placeholder="Enter country"
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="orgZipCode">ZIP Code</label>
+          <input
+            type="text"
+            id="orgZipCode"
+            name="address.zipCode"
+            value={orgFormData.address.zipCode}
+            onChange={handleOrgInputChange}
+            placeholder="Enter ZIP code"
+            required
+          />
+        </div>
+      </div>
+      <button type="submit" className="auth-submit-btn">
+        Create Organization
+      </button>
+    </form>
+  );
+
+  // Add useEffect to monitor state changes
+  useEffect(() => {
+    console.log("State updated:", {
+      isLogin,
+      showOrgSetup,
+      createdOrgId,
+      createdOrgName,
+    });
+  }, [isLogin, showOrgSetup, createdOrgId, createdOrgName]);
 
   return (
     <div className="auth-container">
       <div className="auth-background">
         <div className="auth-pattern"></div>
       </div>
-      
+
       <div className="auth-content">
         <div className="auth-card">
           <div className="auth-header">
@@ -269,93 +595,78 @@ const Auth = ({ onAuthSuccess }) => {
               <div className="logo-icon">S</div>
               <h1>TGS eLearning Platform</h1>
             </div>
-            <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+            <h2>
+              {showOrgSetup
+                ? "Create Organization"
+                : isLogin
+                ? "Welcome Back"
+                : "Create Account"}
+            </h2>
             <p>
-              {isLogin 
-                ? 'Sign in to your organization account' 
-                : 'Set up your organization on our platform'
-              }
+              {showOrgSetup
+                ? "Set up your organization first"
+                : isLogin
+                ? "Sign in to your organization account"
+                : createdOrgName
+                ? `Complete your registration for ${createdOrgName}`
+                : "Complete your registration"}
             </p>
           </div>
-
-          <form onSubmit={handleSubmit} className="auth-form">
-            {error && (
-              <div className="alert alert-error">
-                <span className="alert-icon">⚠️</span>
-                {error}
-              </div>
-            )}
-            
-            {success && (
-              <div className="alert alert-success">
-                <span className="alert-icon">✅</span>
-                {success}
-              </div>
-            )}
-
-            {!isLogin && (
-              <>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="firstName">First Name</label>
-                    <input
-                      type="text"
-                      id="firstName"
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleInputChange}
-                      placeholder="Enter your first name"
-                      disabled={loading}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="lastName">Last Name</label>
-                    <input
-                      type="text"
-                      id="lastName"
-                      name="lastName"
-                      value={formData.lastName}
-                      onChange={handleInputChange}
-                      placeholder="Enter your last name"
-                      disabled={loading}
-                      required
-                    />
-                  </div>
+          {/* 
+          {isError && (
+            <div className="alert alert-error">
+              <span className="alert-icon">⚠️</span>
+              {errorMessage}
+              {isRateLimited && retryAfter && (
+                <div className="rate-limit-info">
+                  Please try again in {retryAfter} seconds
                 </div>
+              )}
+            </div>
+          )} */}
 
-                <div className="form-group">
-                  <label htmlFor="organizationName">Organization Name</label>
-                  <input
-                    type="text"
-                    id="organizationName"
-                    name="organizationName"
-                    value={formData.organizationName}
-                    onChange={handleInputChange}
-                    placeholder="Enter your organization name"
-                    disabled={loading}
-                    required
-                  />
-                </div>
+          {/* {success && (
+            <div className="alert alert-success">
+              <span className="alert-icon">✅</span>
+              {success}
+            </div>
+          )} */}
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="organizationType">Organization Type</label>
-                    <select
-                      id="organizationType"
-                      name="organizationType"
-                      value={formData.organizationType}
-                      onChange={handleInputChange}
-                      disabled={loading}
-                    >
-                      <option value="education">Educational Institution</option>
-                      <option value="corporate">Corporate</option>
-                      <option value="government">Government</option>
-                      <option value="nonprofit">Non-Profit</option>
-                      <option value="healthcare">Healthcare</option>
-                      <option value="other">Other</option>
-                    </select>
+          {showOrgSetup ? (
+            <div>{renderOrgSetupForm()}</div>
+          ) : (
+            <form onSubmit={handleSubmit} className="auth-form">
+              {!isLogin && (
+                <>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="firstName">First Name</label>
+                      <input
+                        type="text"
+                        id="firstName"
+                        name="firstName"
+                        value={formData.firstName}
+                        onChange={handleInputChange}
+                        placeholder="Enter your first name"
+                        disabled={isLoading}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="lastName">Last Name</label>
+                      <input
+                        type="text"
+                        id="lastName"
+                        name="lastName"
+                        value={formData.lastName}
+                        onChange={handleInputChange}
+                        placeholder="Enter your last name"
+                        disabled={isLoading}
+                        required
+                      />
+                    </div>
                   </div>
+
                   <div className="form-group">
                     <label htmlFor="role">Your Role</label>
                     <select
@@ -363,109 +674,114 @@ const Auth = ({ onAuthSuccess }) => {
                       name="role"
                       value={formData.role}
                       onChange={handleInputChange}
-                      disabled={loading}
+                      disabled={isLoading}
+                      required
                     >
-                      <option value="admin">Administrator</option>
-                      <option value="instructor">Instructor</option>
-                      <option value="manager">Manager</option>
-                      <option value="coordinator">Coordinator</option>
+                      {roles.length === 0 && (
+                        <option value="">Loading roles...</option>
+                      )}
+                      {roles.map((role) => (
+                        <option key={role._id} value={role._id}>
+                          {role.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
 
-            <div className="form-group">
-              <label htmlFor="email">Email Address</label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                placeholder="Enter your email address"
-                disabled={loading}
-                required
-              />
-            </div>
-
-            {!isLogin && (
               <div className="form-group">
-                <label htmlFor="phone">Phone Number (Optional)</label>
+                <label htmlFor="email">Email Address</label>
                 <input
-                  type="tel"
-                  id="phone"
-                  name="phone"
-                  value={formData.phone}
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
                   onChange={handleInputChange}
-                  placeholder="Enter your phone number"
-                  disabled={loading}
-                />
-              </div>
-            )}
-
-            <div className="form-group">
-              <label htmlFor="password">Password</label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                placeholder="Enter your password"
-                disabled={loading}
-                required
-              />
-            </div>
-
-            {!isLogin && (
-              <div className="form-group">
-                <label htmlFor="confirmPassword">Confirm Password</label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  placeholder="Confirm your password"
-                  disabled={loading}
+                  placeholder="Enter your email address"
+                  disabled={isLoading}
                   required
                 />
               </div>
-            )}
 
-            {!isLogin && (
-              <div className="form-group checkbox-group">
-                <label className="checkbox-label">
+              <div className="form-group">
+                <label htmlFor="password">Password</label>
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  placeholder="Enter your password"
+                  disabled={isLoading}
+                  required
+                />
+                {isLogin && (
+                  <div className="forgot-password">
+                    <a href="/forgot-password" className="link">
+                      Forgot Password?
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {!isLogin && (
+                <div className="form-group">
+                  <label htmlFor="confirmPassword">Confirm Password</label>
                   <input
-                    type="checkbox"
-                    name="agreeToTerms"
-                    checked={formData.agreeToTerms}
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
                     onChange={handleInputChange}
-                    disabled={loading}
+                    placeholder="Confirm your password"
+                    disabled={isLoading}
                     required
                   />
-                  <span className="checkmark"></span>
-                  I agree to the <a href="#" className="link">Terms of Service</a> and <a href="#" className="link">Privacy Policy</a>
-                </label>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className={`auth-submit-btn ${loading ? 'loading' : ''}`}
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <span className="spinner"></span>
-                  {isLogin ? 'Signing In...' : 'Creating Account...'}
-                </>
-              ) : (
-                isLogin ? 'Sign In' : 'Create Account'
+                </div>
               )}
-            </button>
-          </form>
+
+              {!isLogin && (
+                <div className="form-group checkbox-group">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      name="termsAccepted"
+                      checked={formData.termsAccepted}
+                      onChange={handleInputChange}
+                      disabled={isLoading}
+                      required
+                    />
+                    <span className="checkmark"></span>I agree to the{" "}
+                    <a href="#" className="link">
+                      Terms of Service
+                    </a>{" "}
+                    and{" "}
+                    <a href="#" className="link">
+                      Privacy Policy
+                    </a>
+                  </label>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className={`auth-submit-btn ${isLoading ? "loading" : ""}`}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <span className="spinner"></span>
+                    {isLogin ? "Signing In..." : "Creating Account..."}
+                  </>
+                ) : isLogin ? (
+                  "Sign In"
+                ) : (
+                  "Create Account"
+                )}
+              </button>
+            </form>
+          )}
 
           <div className="auth-footer">
             <p>
@@ -474,47 +790,11 @@ const Auth = ({ onAuthSuccess }) => {
                 type="button"
                 className="auth-toggle-btn"
                 onClick={toggleMode}
-                disabled={loading}
+                disabled={isLoading}
               >
-                {isLogin ? 'Sign Up' : 'Sign In'}
+                {isLogin ? "Sign Up" : "Sign In"}
               </button>
             </p>
-            
-            {isLogin && (
-              <div className="demo-accounts">
-                <p className="demo-title">Try Demo Accounts:</p>
-                <div className="demo-buttons">
-                  <button
-                    type="button"
-                    className="demo-btn"
-                    onClick={() => {
-                      setFormData(prev => ({
-                        ...prev,
-                        email: 'admin@demo.com',
-                        password: 'demo123'
-                      }));
-                    }}
-                    disabled={loading}
-                  >
-                    Admin Demo
-                  </button>
-                  <button
-                    type="button"
-                    className="demo-btn"
-                    onClick={() => {
-                      setFormData(prev => ({
-                        ...prev,
-                        email: 'instructor@demo.com',
-                        password: 'demo123'
-                      }));
-                    }}
-                    disabled={loading}
-                  >
-                    Instructor Demo
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -524,7 +804,10 @@ const Auth = ({ onAuthSuccess }) => {
             <div className="feature-item">
               <div className="feature-icon">🎯</div>
               <h4>Content Builder</h4>
-              <p>Create interactive learning courses with our drag-and-drop builder</p>
+              <p>
+                Create interactive learning courses with our drag-and-drop
+                builder
+              </p>
             </div>
             <div className="feature-item">
               <div className="feature-icon">📊</div>
@@ -539,7 +822,9 @@ const Auth = ({ onAuthSuccess }) => {
             <div className="feature-item">
               <div className="feature-icon">🌐</div>
               <h4>E-Learning Standard Compatible</h4>
-              <p>Full support for modern e-learning standards and LMS integration</p>
+              <p>
+                Full support for modern e-learning standards and LMS integration
+              </p>
             </div>
           </div>
         </div>
@@ -548,4 +833,4 @@ const Auth = ({ onAuthSuccess }) => {
   );
 };
 
-export default Auth; 
+export default Auth;

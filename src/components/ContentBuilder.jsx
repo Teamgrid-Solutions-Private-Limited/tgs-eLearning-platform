@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
 import TemplateLibrary from './TemplateLibrary';
-import './ContentBuilder.css';
+import "./style/ContentBuilder.css";
 
 // Content element types
 const elementTypes = {
